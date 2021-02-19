@@ -62,8 +62,6 @@ public class EventDispatcher<T extends DataCollectionId> {
     private static final Logger LOGGER = LoggerFactory.getLogger(EventDispatcher.class);
 
     private final TopicSelector<T> topicSelector;
-    private final DatabaseSchema<T> schema;
-    private final HistorizedDatabaseSchema<T> historizedSchema;
     private final ChangeEventQueue<DataChangeEvent> queue;
     private final DataCollectionFilter<T> filter;
     private final ChangeEventCreator changeEventCreator;
@@ -84,28 +82,24 @@ public class EventDispatcher<T extends DataCollectionId> {
     private final StreamingChangeRecordReceiver streamingReceiver;
 
     public EventDispatcher(CommonConnectorConfig connectorConfig, TopicSelector<T> topicSelector,
-                           DatabaseSchema<T> schema, ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
+                           ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
                            ChangeEventCreator changeEventCreator, EventMetadataProvider metadataProvider, SchemaNameAdjuster schemaNameAdjuster) {
-        this(connectorConfig, topicSelector, schema, queue, filter, changeEventCreator, null, metadataProvider, null, schemaNameAdjuster);
+        this(connectorConfig, topicSelector, queue, filter, changeEventCreator, null, metadataProvider, null, schemaNameAdjuster);
     }
 
     public EventDispatcher(CommonConnectorConfig connectorConfig, TopicSelector<T> topicSelector,
-                           DatabaseSchema<T> schema, ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
+                           ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
                            ChangeEventCreator changeEventCreator, EventMetadataProvider metadataProvider,
                            Heartbeat heartbeat, SchemaNameAdjuster schemaNameAdjuster) {
-        this(connectorConfig, topicSelector, schema, queue, filter, changeEventCreator, null, metadataProvider, heartbeat, schemaNameAdjuster);
+        this(connectorConfig, topicSelector, queue, filter, changeEventCreator, null, metadataProvider, heartbeat, schemaNameAdjuster);
     }
 
     public EventDispatcher(CommonConnectorConfig connectorConfig, TopicSelector<T> topicSelector,
-                           DatabaseSchema<T> schema, ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
+                           ChangeEventQueue<DataChangeEvent> queue, DataCollectionFilter<T> filter,
                            ChangeEventCreator changeEventCreator, InconsistentSchemaHandler<T> inconsistentSchemaHandler,
                            EventMetadataProvider metadataProvider, Heartbeat customHeartbeat, SchemaNameAdjuster schemaNameAdjuster) {
         this.connectorConfig = connectorConfig;
         this.topicSelector = topicSelector;
-        this.schema = schema;
-        this.historizedSchema = schema instanceof HistorizedDatabaseSchema
-                ? (HistorizedDatabaseSchema<T>) schema
-                : null;
         this.queue = queue;
         this.filter = filter;
         this.changeEventCreator = changeEventCreator;
@@ -139,7 +133,8 @@ public class EventDispatcher<T extends DataCollectionId> {
                 .build();
     }
 
-    public void dispatchSnapshotEvent(T dataCollectionId, ChangeRecordEmitter changeRecordEmitter, SnapshotReceiver receiver) throws InterruptedException {
+    public void dispatchSnapshotEvent(DatabaseSchema<T> schema, T dataCollectionId, ChangeRecordEmitter changeRecordEmitter, SnapshotReceiver receiver)
+            throws InterruptedException {
         // TODO Handle Heartbeat
 
         DataCollectionSchema dataCollectionSchema = schema.schemaFor(dataCollectionId);
@@ -177,7 +172,7 @@ public class EventDispatcher<T extends DataCollectionId> {
      *
      * @return {@code true} if an event was dispatched (i.e. sent to the message broker), {@code false} otherwise.
      */
-    public boolean dispatchDataChangeEvent(T dataCollectionId, ChangeRecordEmitter changeRecordEmitter) throws InterruptedException {
+    public boolean dispatchDataChangeEvent(DatabaseSchema<T> schema, T dataCollectionId, ChangeRecordEmitter changeRecordEmitter) throws InterruptedException {
         try {
             boolean handled = false;
             if (!filter.isIncluded(dataCollectionId)) {
@@ -260,7 +255,9 @@ public class EventDispatcher<T extends DataCollectionId> {
         return Optional.empty();
     }
 
-    public void dispatchSchemaChangeEvent(T dataCollectionId, SchemaChangeEventEmitter schemaChangeEventEmitter) throws InterruptedException {
+    public void dispatchSchemaChangeEvent(HistorizedDatabaseSchema<T> historizedSchema, T dataCollectionId,
+                                          SchemaChangeEventEmitter schemaChangeEventEmitter)
+            throws InterruptedException {
         if (dataCollectionId != null && !filter.isIncluded(dataCollectionId)) {
             if (historizedSchema == null || historizedSchema.storeOnlyMonitoredTables()) {
                 LOGGER.trace("Filtering schema change event for {}", dataCollectionId);
@@ -270,7 +267,9 @@ public class EventDispatcher<T extends DataCollectionId> {
         schemaChangeEventEmitter.emitSchemaChangeEvent(new SchemaChangeEventReceiver());
     }
 
-    public void dispatchSchemaChangeEvent(Collection<T> dataCollectionIds, SchemaChangeEventEmitter schemaChangeEventEmitter) throws InterruptedException {
+    public void dispatchSchemaChangeEvent(HistorizedDatabaseSchema<T> historizedSchema, Collection<T> dataCollectionIds,
+                                          SchemaChangeEventEmitter schemaChangeEventEmitter)
+            throws InterruptedException {
         boolean anyNonfilteredEvent = false;
         if (dataCollectionIds == null || dataCollectionIds.isEmpty()) {
             anyNonfilteredEvent = true;
@@ -431,7 +430,7 @@ public class EventDispatcher<T extends DataCollectionId> {
         }
     }
 
-    private final class SchemaChangeEventReceiver implements SchemaChangeEventEmitter.Receiver {
+    private final class SchemaChangeEventReceiver implements SchemaChangeEventEmitter.Receiver<T> {
 
         private Struct schemaChangeRecordKey(SchemaChangeEvent event) {
             Struct result = new Struct(schemaChangeKeySchema);
@@ -450,8 +449,10 @@ public class EventDispatcher<T extends DataCollectionId> {
         }
 
         @Override
-        public void schemaChangeEvent(SchemaChangeEvent event) throws InterruptedException {
-            historizedSchema.applySchemaChange(event);
+        public void schemaChangeEvent(HistorizedDatabaseSchema<T> historizedSchema, SchemaChangeEvent event) throws InterruptedException {
+            if (historizedSchema != null) {
+                historizedSchema.applySchemaChange(event);
+            }
 
             if (connectorConfig.isSchemaChangesHistoryEnabled()) {
                 final String topicName = topicSelector.getPrimaryTopic();

@@ -50,7 +50,7 @@ import io.debezium.util.Threads;
  *
  * @author Chris Cranford
  */
-public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEventSource {
+public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEventSource<MongoDbSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MongoDbSnapshotChangeEventSource.class);
 
@@ -84,7 +84,8 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
     }
 
     @Override
-    protected SnapshotResult doExecute(ChangeEventSourceContext context, SnapshotContext snapshotContext, SnapshottingTask snapshottingTask)
+    protected SnapshotResult doExecute(ChangeEventSourceContext context, SnapshotContext snapshotContext,
+                                       SnapshottingTask snapshottingTask, MongoDbSchema schema)
             throws Exception {
         final MongoDbSnapshottingTask mongoDbSnapshottingTask = (MongoDbSnapshottingTask) snapshottingTask;
         final MongoDbSnapshotContext mongoDbSnapshotContext = (MongoDbSnapshotContext) snapshotContext;
@@ -113,7 +114,7 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
                 try {
                     taskContext.configureLoggingContext(replicaSet.replicaSetName());
                     try {
-                        snapshotReplicaSet(context, mongoDbSnapshotContext, replicaSet);
+                        snapshotReplicaSet(context, mongoDbSnapshotContext, schema, replicaSet);
                     }
                     finally {
                         final MongoDbOffsetContext offset = (MongoDbOffsetContext) snapshotContext.offset;
@@ -158,7 +159,7 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
     }
 
     @Override
-    protected SnapshottingTask getSnapshottingTask(OffsetContext previousOffset) {
+    protected SnapshottingTask getSnapshottingTask(MongoDbSchema schema, OffsetContext previousOffset) {
         if (previousOffset == null) {
             LOGGER.info("No previous offset has been found");
             if (connectorConfig.getSnapshotMode().equals(MongoDbConnectorConfig.SnapshotMode.NEVER)) {
@@ -206,12 +207,13 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
         return new MongoDbSnapshotContext();
     }
 
-    private void snapshotReplicaSet(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext ctx, ReplicaSet replicaSet) throws InterruptedException {
+    private void snapshotReplicaSet(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext ctx, MongoDbSchema schema, ReplicaSet replicaSet)
+            throws InterruptedException {
         MongoPrimary primaryClient = null;
         try {
             primaryClient = establishConnectionToPrimary(replicaSet);
             if (primaryClient != null) {
-                createDataEvents(sourceContext, ctx, replicaSet, primaryClient);
+                createDataEvents(sourceContext, ctx, schema, replicaSet, primaryClient);
             }
         }
         finally {
@@ -307,13 +309,13 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
         ctx.offset = new MongoDbOffsetContext(new SourceInfo(connectorConfig), new TransactionContext(), positions);
     }
 
-    private void createDataEvents(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext snapshotContext, ReplicaSet replicaSet,
+    private void createDataEvents(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext snapshotContext, MongoDbSchema schema, ReplicaSet replicaSet,
                                   MongoPrimary primaryClient)
             throws InterruptedException {
         SnapshotReceiver snapshotReceiver = dispatcher.getSnapshotChangeEventReceiver();
         snapshotContext.offset.preSnapshotStart();
 
-        createDataEventsForReplicaSet(sourceContext, snapshotContext, snapshotReceiver, replicaSet, primaryClient);
+        createDataEventsForReplicaSet(sourceContext, snapshotContext, schema, snapshotReceiver, replicaSet, primaryClient);
 
         snapshotContext.offset.preSnapshotCompletion();
         snapshotReceiver.completeSnapshot();
@@ -324,7 +326,8 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
      * Dispatches the data change events for the records of a single replica-set.
      */
     private void createDataEventsForReplicaSet(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext snapshotContext,
-                                               SnapshotReceiver snapshotReceiver, ReplicaSet replicaSet, MongoPrimary primaryClient)
+                                               MongoDbSchema schema, SnapshotReceiver snapshotReceiver,
+                                               ReplicaSet replicaSet, MongoPrimary primaryClient)
             throws InterruptedException {
 
         final String rsName = replicaSet.replicaSetName();
@@ -372,6 +375,7 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
                             createDataEventsForCollection(
                                     sourceContext,
                                     snapshotContext,
+                                    schema,
                                     snapshotReceiver,
                                     replicaSet,
                                     id,
@@ -417,6 +421,7 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
                 createDataEventsForCollection(
                         sourceContext,
                         snapshotContext,
+                        schema,
                         snapshotReceiver,
                         replicaSet,
                         collectionId,
@@ -427,8 +432,10 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
         offsetContext.stopReplicaSetSnapshot(replicaSet.replicaSetName());
     }
 
-    private void createDataEventsForCollection(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext snapshotContext, SnapshotReceiver snapshotReceiver,
-                                               ReplicaSet replicaSet, CollectionId collectionId, MongoPrimary primaryClient)
+    private void createDataEventsForCollection(ChangeEventSourceContext sourceContext, MongoDbSnapshotContext snapshotContext,
+                                               MongoDbSchema schema, SnapshotReceiver snapshotReceiver,
+                                               ReplicaSet replicaSet, CollectionId collectionId,
+                                               MongoPrimary primaryClient)
             throws InterruptedException {
 
         long exportStart = clock.currentTimeInMillis();
@@ -460,7 +467,8 @@ public class MongoDbSnapshotChangeEventSource extends AbstractSnapshotChangeEven
                             snapshotContext.offset.markLastSnapshotRecord();
                         }
 
-                        dispatcher.dispatchSnapshotEvent(collectionId, getChangeRecordEmitter(snapshotContext, collectionId, document, replicaSet), snapshotReceiver);
+                        dispatcher.dispatchSnapshotEvent(schema, collectionId, getChangeRecordEmitter(snapshotContext, collectionId, document, replicaSet),
+                                snapshotReceiver);
                     }
                 }
                 else if (snapshotContext.lastCollection) {

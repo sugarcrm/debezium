@@ -6,6 +6,7 @@
 package io.debezium.pipeline.source.spi;
 
 import io.debezium.pipeline.spi.SnapshotResult;
+import io.debezium.schema.DatabaseSchema;
 
 /**
  * A change event source that emits events for taking a consistent snapshot of the captured tables, which may include
@@ -13,7 +14,7 @@ import io.debezium.pipeline.spi.SnapshotResult;
  *
  * @author Gunnar Morling
  */
-public interface SnapshotChangeEventSource extends ChangeEventSource {
+public interface SnapshotChangeEventSource<T extends DatabaseSchema<?>> extends ChangeEventSource {
 
     /**
      * Executes this source. Implementations should regularly check via the given context if they should stop. If that's
@@ -26,5 +27,5 @@ public interface SnapshotChangeEventSource extends ChangeEventSource {
      * @throws InterruptedException
      *             in case the snapshot was aborted before completion
      */
-    SnapshotResult execute(ChangeEventSourceContext context) throws InterruptedException;
+    SnapshotResult execute(ChangeEventSourceContext context, T schema) throws InterruptedException;
 }

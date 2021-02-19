@@ -21,6 +21,7 @@ import io.debezium.pipeline.source.spi.SnapshotProgressListener;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.pipeline.spi.SnapshotResult;
 import io.debezium.schema.DataCollectionId;
+import io.debezium.schema.DatabaseSchema;
 import io.debezium.util.Clock;
 import io.debezium.util.Metronome;
 import io.debezium.util.Threads;
@@ -31,7 +32,7 @@ import io.debezium.util.Threads;
  *
  * @author Chris Cranford
  */
-public abstract class AbstractSnapshotChangeEventSource implements SnapshotChangeEventSource {
+public abstract class AbstractSnapshotChangeEventSource<T extends DatabaseSchema<?>> implements SnapshotChangeEventSource<T> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractSnapshotChangeEventSource.class);
 
@@ -46,8 +47,8 @@ public abstract class AbstractSnapshotChangeEventSource implements SnapshotChang
     }
 
     @Override
-    public SnapshotResult execute(ChangeEventSourceContext context) throws InterruptedException {
-        SnapshottingTask snapshottingTask = getSnapshottingTask(previousOffset);
+    public SnapshotResult execute(ChangeEventSourceContext context, T schema) throws InterruptedException {
+        SnapshottingTask snapshottingTask = getSnapshottingTask(schema, previousOffset);
         if (snapshottingTask.shouldSkipSnapshot()) {
             LOGGER.debug("Skipping snapshotting");
             return SnapshotResult.skipped(previousOffset);
@@ -68,7 +69,7 @@ public abstract class AbstractSnapshotChangeEventSource implements SnapshotChang
 
         try {
             snapshotProgressListener.snapshotStarted();
-            SnapshotResult result = doExecute(context, ctx, snapshottingTask);
+            SnapshotResult result = doExecute(context, ctx, snapshottingTask, schema);
 
             return result;
         }
@@ -138,12 +139,13 @@ public abstract class AbstractSnapshotChangeEventSource implements SnapshotChang
      * @param snapshottingTask immutable information about what tasks should be performed during snapshot
      * @return an indicator to the position at which the snapshot was taken
      */
-    protected abstract SnapshotResult doExecute(ChangeEventSourceContext context, SnapshotContext snapshotContext, SnapshottingTask snapshottingTask) throws Exception;
+    protected abstract SnapshotResult doExecute(ChangeEventSourceContext context, SnapshotContext snapshotContext, SnapshottingTask snapshottingTask, T schema)
+            throws Exception;
 
     /**
      * Returns the snapshotting task based on the previous offset (if available) and the connector's snapshotting mode.
      */
-    protected abstract SnapshottingTask getSnapshottingTask(OffsetContext previousOffset);
+    protected abstract SnapshottingTask getSnapshottingTask(T schema, OffsetContext previousOffset);
 
     /**
      * Prepares the taking of a snapshot and returns an initial {@link SnapshotContext}.

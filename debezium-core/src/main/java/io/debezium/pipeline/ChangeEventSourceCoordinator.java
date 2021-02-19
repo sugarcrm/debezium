@@ -102,7 +102,7 @@ public class ChangeEventSourceCoordinator {
                     commitOffsetLock.unlock();
                 }
                 eventDispatcher.setEventListener(snapshotMetrics);
-                SnapshotResult snapshotResult = snapshotSource.execute(context);
+                SnapshotResult snapshotResult = snapshotSource.execute(context, schema);
                 LOGGER.info("Snapshot ended with {}", snapshotResult);
 
                 if (snapshotResult.getStatus() == SnapshotResultStatus.COMPLETED || schema.tableInformationComplete()) {
@@ -137,7 +137,7 @@ public class ChangeEventSourceCoordinator {
         eventDispatcher.setEventListener(streamingMetrics);
         streamingConnected(true);
         LOGGER.info("Starting streaming");
-        streamingSource.execute(context);
+        streamingSource.execute(context, schema);
         LOGGER.info("Finished streaming");
     }
 

@@ -50,7 +50,7 @@ import io.debezium.util.Clock;
 import io.debezium.util.Collect;
 import io.debezium.util.Strings;
 
-public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource {
+public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource<MySqlDatabaseSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MySqlSnapshotChangeEventSource.class);
 
@@ -61,34 +61,32 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
     private final RelationalTableFilters filters;
     private final MySqlSnapshotChangeEventSourceMetrics metrics;
     private final MySqlOffsetContext previousOffset;
-    private final MySqlDatabaseSchema databaseSchema;
     private final List<SchemaChangeEvent> schemaEvents = new ArrayList<>();
     private Set<TableId> delayedSchemaSnapshotTables = Collections.emptySet();
     private final BlockingConsumer<Function<SourceRecord, SourceRecord>> lastEventProcessor;
 
     public MySqlSnapshotChangeEventSource(MySqlConnectorConfig connectorConfig, MySqlOffsetContext previousOffset, MySqlConnection connection,
-                                          MySqlDatabaseSchema schema, EventDispatcher<TableId> dispatcher, Clock clock,
+                                          EventDispatcher<TableId> dispatcher, Clock clock,
                                           MySqlSnapshotChangeEventSourceMetrics metrics,
                                           BlockingConsumer<Function<SourceRecord, SourceRecord>> lastEventProcessor) {
-        super(connectorConfig, previousOffset, connection, schema, dispatcher, clock, metrics);
+        super(connectorConfig, previousOffset, connection, dispatcher, clock, metrics);
         this.connectorConfig = connectorConfig;
         this.connection = connection;
         this.filters = connectorConfig.getTableFilters();
         this.metrics = metrics;
         this.previousOffset = previousOffset;
-        this.databaseSchema = schema;
         this.lastEventProcessor = lastEventProcessor;
     }
 
     @Override
-    protected SnapshottingTask getSnapshottingTask(OffsetContext previousOffset) {
+    protected SnapshottingTask getSnapshottingTask(MySqlDatabaseSchema schema, OffsetContext previousOffset) {
         boolean snapshotSchema = true;
         boolean snapshotData = true;
 
         // found a previous offset and the earlier snapshot has completed
         if (previousOffset != null && !previousOffset.isSnapshotRunning()) {
             LOGGER.info("A previous offset indicating a completed snapshot has been found. Neither schema nor data will be snapshotted.");
-            snapshotSchema = databaseSchema.isStorageInitializationExecuted();
+            snapshotSchema = schema.isStorageInitializationExecuted();
             snapshotData = false;
         }
         else {
@@ -112,7 +110,9 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
     }
 
     @Override
-    protected void connectionCreated(RelationalSnapshotContext snapshotContext) throws Exception {
+    protected void connectionCreated(RelationalSnapshotContext snapshotContext,
+                                     MySqlDatabaseSchema schema)
+            throws Exception {
     }
 
     @Override
@@ -162,7 +162,7 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
     }
 
     @Override
-    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext)
+    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema)
             throws SQLException, InterruptedException {
         // Set the transaction isolation level to REPEATABLE READ. This is the default, but the default can be changed
         // which is why we explicitly set it here.
@@ -222,7 +222,7 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
     }
 
     @Override
-    protected void releaseDataSnapshotLocks(RelationalSnapshotContext snapshotContext) throws Exception {
+    protected void releaseDataSnapshotLocks(RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema) throws Exception {
         if (isGloballyLocked()) {
             globalUnlock();
         }
@@ -230,12 +230,12 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
             tableUnlock();
             if (!delayedSchemaSnapshotTables.isEmpty()) {
                 schemaEvents.clear();
-                createSchemaEventsForTables(snapshotContext, delayedSchemaSnapshotTables, false);
+                createSchemaEventsForTables(snapshotContext, schema, delayedSchemaSnapshotTables, false);
 
                 for (Iterator<SchemaChangeEvent> i = schemaEvents.iterator(); i.hasNext();) {
                     final SchemaChangeEvent event = i.next();
 
-                    if (databaseSchema.storeOnlyMonitoredTables() && event.getDatabase() != null && event.getDatabase().length() != 0
+                    if (schema.storeOnlyMonitoredTables() && event.getDatabase() != null && event.getDatabase().length() != 0
                             && !connectorConfig.getTableFilters().databaseFilter().test(event.getDatabase())) {
                         LOGGER.debug("Skipping schema event as it belongs to a non-captured database: '{}'", event);
                         continue;
@@ -250,11 +250,11 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
                         super.lastSnapshotRecord(snapshotContext);
                     }
 
-                    dispatcher.dispatchSchemaChangeEvent(tableId, (receiver) -> receiver.schemaChangeEvent(event));
+                    dispatcher.dispatchSchemaChangeEvent(schema, tableId, (receiver) -> receiver.schemaChangeEvent(schema, event));
                 }
 
                 // Make schema available for snapshot source
-                databaseSchema.tableIds().forEach(x -> snapshotContext.tables.overwriteTable(databaseSchema.tableFor(x)));
+                schema.tableIds().forEach(x -> snapshotContext.tables.overwriteTable(schema.tableFor(x)));
             }
         }
     }
@@ -297,13 +297,13 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
         tryStartingSnapshot(ctx);
     }
 
-    private void addSchemaEvent(RelationalSnapshotContext snapshotContext, String database, String ddl) {
-        schemaEvents.addAll(databaseSchema.parseSnapshotDdl(ddl, database, (MySqlOffsetContext) snapshotContext.offset,
+    private void addSchemaEvent(RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema, String database, String ddl) {
+        schemaEvents.addAll(schema.parseSnapshotDdl(ddl, database, (MySqlOffsetContext) snapshotContext.offset,
                 clock.currentTimeAsInstant()));
     }
 
     @Override
-    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext) throws Exception {
+    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema) throws Exception {
         Set<TableId> capturedSchemaTables;
         if (twoPhaseSchemaSnapshot()) {
             // Capture schema of captured tables after they are locked
@@ -314,7 +314,7 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
             delayedSchemaSnapshotTables = Collect.minus(snapshotContext.capturedSchemaTables, snapshotContext.capturedTables);
             LOGGER.info("Tables for delayed schema capture: {}", delayedSchemaSnapshotTables);
         }
-        if (databaseSchema.storeOnlyMonitoredTables()) {
+        if (schema.storeOnlyMonitoredTables()) {
             capturedSchemaTables = snapshotContext.capturedTables;
             LOGGER.info("Only monitored tables schema should be captured, capturing: {}", capturedSchemaTables);
         }
@@ -327,13 +327,13 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
         final Set<String> databases = tablesToRead.keySet();
 
         // Record default charset
-        addSchemaEvent(snapshotContext, "", connection.setStatementFor(connection.readMySqlCharsetSystemVariables()));
+        addSchemaEvent(snapshotContext, schema, "", connection.setStatementFor(connection.readMySqlCharsetSystemVariables()));
 
         for (TableId tableId : capturedSchemaTables) {
             if (!sourceContext.isRunning()) {
                 throw new InterruptedException("Interrupted while emitting initial DROP TABLE events");
             }
-            addSchemaEvent(snapshotContext, tableId.catalog(), "DROP TABLE IF EXISTS " + quote(tableId));
+            addSchemaEvent(snapshotContext, schema, tableId.catalog(), "DROP TABLE IF EXISTS " + quote(tableId));
         }
 
         final Map<String, DatabaseLocales> databaseCharsets = connection.readDatabaseCollations();
@@ -343,27 +343,29 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
             }
 
             LOGGER.info("Reading structure of database '{}'", database);
-            addSchemaEvent(snapshotContext, database, "DROP DATABASE IF EXISTS " + quote(database));
+            addSchemaEvent(snapshotContext, schema, database, "DROP DATABASE IF EXISTS " + quote(database));
             final StringBuilder createDatabaseDddl = new StringBuilder("CREATE DATABASE " + quote(database));
             final DatabaseLocales defaultDatabaseLocales = databaseCharsets.get(database);
             if (defaultDatabaseLocales != null) {
                 defaultDatabaseLocales.appendToDdlStatement(database, createDatabaseDddl);
             }
-            addSchemaEvent(snapshotContext, database, createDatabaseDddl.toString());
-            addSchemaEvent(snapshotContext, database, "USE " + quote(database));
+            addSchemaEvent(snapshotContext, schema, database, createDatabaseDddl.toString());
+            addSchemaEvent(snapshotContext, schema, database, "USE " + quote(database));
 
-            createSchemaEventsForTables(snapshotContext, tablesToRead.get(database), true);
+            createSchemaEventsForTables(snapshotContext, schema, tablesToRead.get(database), true);
         }
     }
 
-    void createSchemaEventsForTables(RelationalSnapshotContext snapshotContext, final Collection<TableId> tablesToRead, final boolean firstPhase) throws SQLException {
+    void createSchemaEventsForTables(RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema, final Collection<TableId> tablesToRead,
+                                     final boolean firstPhase)
+            throws SQLException {
         for (TableId tableId : tablesToRead) {
             if (firstPhase && delayedSchemaSnapshotTables.contains(tableId)) {
                 continue;
             }
             connection.query("SHOW CREATE TABLE " + quote(tableId), rs -> {
                 if (rs.next()) {
-                    addSchemaEvent(snapshotContext, tableId.catalog(), rs.getString(2));
+                    addSchemaEvent(snapshotContext, schema, tableId.catalog(), rs.getString(2));
                 }
             });
         }
@@ -398,12 +400,12 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
      * @return a valid query string
      */
     @Override
-    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, TableId tableId) {
+    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, MySqlDatabaseSchema schema, TableId tableId) {
         return Optional.of(String.format("SELECT * FROM `%s`.`%s`", tableId.catalog(), tableId.table()));
     }
 
     @Override
-    protected Object getColumnValue(ResultSet rs, int columnIndex, Column column, Table table) throws SQLException {
+    protected Object getColumnValue(MySqlDatabaseSchema schema, ResultSet rs, int columnIndex, Column column, Table table) throws SQLException {
         if (column.jdbcType() == Types.TIME) {
             return readTimeField(rs, columnIndex);
         }
@@ -611,7 +613,8 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
 
     @Override
     protected void createSchemaChangeEventsForTables(ChangeEventSourceContext sourceContext,
-                                                     RelationalSnapshotContext snapshotContext, SnapshottingTask snapshottingTask)
+                                                     RelationalSnapshotContext snapshotContext, SnapshottingTask snapshottingTask,
+                                                     MySqlDatabaseSchema schema)
             throws Exception {
         tryStartingSnapshot(snapshotContext);
 
@@ -621,7 +624,7 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
                 throw new InterruptedException("Interrupted while processing event " + event);
             }
 
-            if (databaseSchema.storeOnlyMonitoredTables() && event.getDatabase() != null && event.getDatabase().length() != 0
+            if (schema.storeOnlyMonitoredTables() && event.getDatabase() != null && event.getDatabase().length() != 0
                     && !connectorConfig.getTableFilters().databaseFilter().test(event.getDatabase())) {
                 LOGGER.debug("Skipping schema event as it belongs to a non-captured database: '{}'", event);
                 continue;
@@ -636,11 +639,11 @@ public class MySqlSnapshotChangeEventSource extends RelationalSnapshotChangeEven
             if (!snapshottingTask.snapshotData() && !i.hasNext()) {
                 lastSnapshotRecord(snapshotContext);
             }
-            dispatcher.dispatchSchemaChangeEvent(tableId, (receiver) -> receiver.schemaChangeEvent(event));
+            dispatcher.dispatchSchemaChangeEvent(schema, tableId, (receiver) -> receiver.schemaChangeEvent(schema, event));
         }
 
         // Make schema available for snapshot source
-        databaseSchema.tableIds().forEach(x -> snapshotContext.tables.overwriteTable(databaseSchema.tableFor(x)));
+        schema.tableIds().forEach(x -> snapshotContext.tables.overwriteTable(schema.tableFor(x)));
     }
 
     @Override

@@ -87,7 +87,7 @@ import io.debezium.util.Threads;
  *
  * @author Jiri Pechanec
  */
-public class MySqlStreamingChangeEventSource implements StreamingChangeEventSource {
+public class MySqlStreamingChangeEventSource implements StreamingChangeEventSource<MySqlDatabaseSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MySqlStreamingChangeEventSource.class);
 
@@ -519,7 +519,7 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
      * @param event the database change data event to be processed; may not be null
      * @throws InterruptedException if this thread is interrupted while recording the DDL statements
      */
-    protected void handleQueryEvent(Event event) throws InterruptedException {
+    protected void handleQueryEvent(MySqlDatabaseSchema schema, Event event) throws InterruptedException {
         QueryEventData command = unwrapData(event);
         LOGGER.debug("Received query command: {}", event);
         String sql = command.getSql().trim();
@@ -576,9 +576,9 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
         try {
             for (SchemaChangeEvent schemaChangeEvent : schemaChangeEvents) {
                 final TableId tableId = schemaChangeEvent.getTables().isEmpty() ? null : schemaChangeEvent.getTables().iterator().next().id();
-                eventDispatcher.dispatchSchemaChangeEvent(tableId, (receiver) -> {
+                eventDispatcher.dispatchSchemaChangeEvent(schema, tableId, (receiver) -> {
                     try {
-                        receiver.schemaChangeEvent(schemaChangeEvent);
+                        receiver.schemaChangeEvent(schema, schemaChangeEvent);
                     }
                     catch (Exception e) {
                         throw new DebeziumException(e);
@@ -676,9 +676,10 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
      * @param event the database change data event to be processed; may not be null
      * @throws InterruptedException if this thread is interrupted while blocking
      */
-    protected void handleInsert(Event event) throws InterruptedException {
+    protected void handleInsert(MySqlDatabaseSchema schema, Event event) throws InterruptedException {
         handleChange(event, "insert", WriteRowsEventData.class, x -> taskContext.getSchema().getTableId(x.getTableId()), WriteRowsEventData::getRows,
-                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(tableId, new MySqlChangeRecordEmitter(offsetContext, clock, Operation.CREATE, null, row)));
+                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(schema, tableId,
+                        new MySqlChangeRecordEmitter(offsetContext, clock, Operation.CREATE, null, row)));
     }
 
     /**
@@ -687,9 +688,9 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
      * @param event the database change data event to be processed; may not be null
      * @throws InterruptedException if this thread is interrupted while blocking
      */
-    protected void handleUpdate(Event event) throws InterruptedException {
+    protected void handleUpdate(MySqlDatabaseSchema schema, Event event) throws InterruptedException {
         handleChange(event, "update", UpdateRowsEventData.class, x -> taskContext.getSchema().getTableId(x.getTableId()), UpdateRowsEventData::getRows,
-                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(tableId,
+                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(schema, tableId,
                         new MySqlChangeRecordEmitter(offsetContext, clock, Operation.UPDATE, row.getKey(), row.getValue())));
     }
 
@@ -699,9 +700,10 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
      * @param event the database change data event to be processed; may not be null
      * @throws InterruptedException if this thread is interrupted while blocking
      */
-    protected void handleDelete(Event event) throws InterruptedException {
+    protected void handleDelete(MySqlDatabaseSchema schema, Event event) throws InterruptedException {
         handleChange(event, "delete", DeleteRowsEventData.class, x -> taskContext.getSchema().getTableId(x.getTableId()), DeleteRowsEventData::getRows,
-                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(tableId, new MySqlChangeRecordEmitter(offsetContext, clock, Operation.DELETE, row, null)));
+                (tableId, row) -> eventDispatcher.dispatchDataChangeEvent(schema, tableId,
+                        new MySqlChangeRecordEmitter(offsetContext, clock, Operation.DELETE, row, null)));
     }
 
     private <T extends EventData, U> void handleChange(Event event, String changeType, Class<T> eventDataClass, TableIdProvider<T> tableIdProvider,
@@ -791,7 +793,7 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
     }
 
     @Override
-    public void execute(ChangeEventSourceContext context) throws InterruptedException {
+    public void execute(ChangeEventSourceContext context, MySqlDatabaseSchema schema) throws InterruptedException {
         if (!connectorConfig.getSnapshotMode().shouldStream()) {
             LOGGER.info("Streaming is disabled for snapshot mode {}", connectorConfig.getSnapshotMode());
             return;
@@ -805,21 +807,21 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
         eventHandlers.put(EventType.INCIDENT, this::handleServerIncident);
         eventHandlers.put(EventType.ROTATE, this::handleRotateLogsEvent);
         eventHandlers.put(EventType.TABLE_MAP, this::handleUpdateTableMetadata);
-        eventHandlers.put(EventType.QUERY, this::handleQueryEvent);
+        eventHandlers.put(EventType.QUERY, (event) -> handleQueryEvent(schema, event));
 
         if (!skippedOperations.contains(Operation.CREATE)) {
-            eventHandlers.put(EventType.WRITE_ROWS, this::handleInsert);
-            eventHandlers.put(EventType.EXT_WRITE_ROWS, this::handleInsert);
+            eventHandlers.put(EventType.WRITE_ROWS, (event) -> handleInsert(schema, event));
+            eventHandlers.put(EventType.EXT_WRITE_ROWS, (event) -> handleInsert(schema, event));
         }
 
         if (!skippedOperations.contains(Operation.UPDATE)) {
-            eventHandlers.put(EventType.UPDATE_ROWS, this::handleUpdate);
-            eventHandlers.put(EventType.EXT_UPDATE_ROWS, this::handleUpdate);
+            eventHandlers.put(EventType.UPDATE_ROWS, (event) -> handleUpdate(schema, event));
+            eventHandlers.put(EventType.EXT_UPDATE_ROWS, (event) -> handleUpdate(schema, event));
         }
 
         if (!skippedOperations.contains(Operation.DELETE)) {
-            eventHandlers.put(EventType.DELETE_ROWS, this::handleDelete);
-            eventHandlers.put(EventType.EXT_DELETE_ROWS, this::handleDelete);
+            eventHandlers.put(EventType.DELETE_ROWS, (event) -> handleDelete(schema, event));
+            eventHandlers.put(EventType.EXT_DELETE_ROWS, (event) -> handleDelete(schema, event));
         }
 
         eventHandlers.put(EventType.VIEW_CHANGE, this::viewChange);

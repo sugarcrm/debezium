@@ -52,7 +52,7 @@ public class MySqlChangeEventSourceFactory implements ChangeEventSourceFactory {
 
     @Override
     public SnapshotChangeEventSource getSnapshotChangeEventSource(OffsetContext offsetContext, SnapshotProgressListener snapshotProgressListener) {
-        return new MySqlSnapshotChangeEventSource(configuration, (MySqlOffsetContext) offsetContext, connection, taskContext.getSchema(), dispatcher, clock,
+        return new MySqlSnapshotChangeEventSource(configuration, (MySqlOffsetContext) offsetContext, connection, dispatcher, clock,
                 (MySqlSnapshotChangeEventSourceMetrics) snapshotProgressListener, record -> modifyAndFlushLastRecord(record));
     }
 

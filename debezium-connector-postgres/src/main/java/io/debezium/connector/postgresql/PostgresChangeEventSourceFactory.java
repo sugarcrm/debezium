@@ -27,7 +27,6 @@ public class PostgresChangeEventSourceFactory implements ChangeEventSourceFactor
     private final ErrorHandler errorHandler;
     private final EventDispatcher<TableId> dispatcher;
     private final Clock clock;
-    private final PostgresSchema schema;
     private final PostgresTaskContext taskContext;
     private final Snapshotter snapshotter;
     private final ReplicationConnection replicationConnection;
@@ -35,7 +34,7 @@ public class PostgresChangeEventSourceFactory implements ChangeEventSourceFactor
     private final SlotState startingSlotInfo;
 
     public PostgresChangeEventSourceFactory(PostgresConnectorConfig configuration, Snapshotter snapshotter, PostgresConnection jdbcConnection,
-                                            ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock, PostgresSchema schema,
+                                            ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock,
                                             PostgresTaskContext taskContext,
                                             ReplicationConnection replicationConnection, SlotCreationResult slotCreatedInfo, SlotState startingSlotInfo) {
         this.configuration = configuration;
@@ -43,7 +42,6 @@ public class PostgresChangeEventSourceFactory implements ChangeEventSourceFactor
         this.errorHandler = errorHandler;
         this.dispatcher = dispatcher;
         this.clock = clock;
-        this.schema = schema;
         this.taskContext = taskContext;
         this.snapshotter = snapshotter;
         this.replicationConnection = replicationConnection;
@@ -58,7 +56,6 @@ public class PostgresChangeEventSourceFactory implements ChangeEventSourceFactor
                 snapshotter,
                 (PostgresOffsetContext) offsetContext,
                 jdbcConnection,
-                schema,
                 dispatcher,
                 clock,
                 snapshotProgressListener,
@@ -76,7 +73,6 @@ public class PostgresChangeEventSourceFactory implements ChangeEventSourceFactor
                 dispatcher,
                 errorHandler,
                 clock,
-                schema,
                 taskContext,
                 replicationConnection);
     }

@@ -46,7 +46,7 @@ import io.debezium.util.Threads;
  *
  * @author Chris Cranford
  */
-public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSource {
+public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSource<MongoDbSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MongoDbStreamingChangeEventSource.class);
 
@@ -78,17 +78,17 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
     }
 
     @Override
-    public void execute(ChangeEventSourceContext context) throws InterruptedException {
+    public void execute(ChangeEventSourceContext context, MongoDbSchema schema) throws InterruptedException {
         final List<ReplicaSet> validReplicaSets = replicaSets.validReplicaSets();
 
         try {
             if (validReplicaSets.size() == 1) {
                 // Streams the replica-set changes in the current thread
-                streamChangesForReplicaSet(context, validReplicaSets.get(0));
+                streamChangesForReplicaSet(context, validReplicaSets.get(0), schema);
             }
             else if (validReplicaSets.size() > 1) {
                 // Starts a thread for each replica-set and executes the streaming process
-                streamChangesForReplicaSets(context, validReplicaSets);
+                streamChangesForReplicaSets(context, validReplicaSets, schema);
             }
         }
         finally {
@@ -96,14 +96,14 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
         }
     }
 
-    private void streamChangesForReplicaSet(ChangeEventSourceContext context, ReplicaSet replicaSet) {
+    private void streamChangesForReplicaSet(ChangeEventSourceContext context, ReplicaSet replicaSet, MongoDbSchema schema) {
         MongoPrimary primaryClient = null;
         try {
             primaryClient = establishConnectionToPrimary(replicaSet);
             if (primaryClient != null) {
                 final AtomicReference<MongoPrimary> primaryReference = new AtomicReference<>(primaryClient);
                 primaryClient.execute("read from oplog on '" + replicaSet + "'", primary -> {
-                    readOplog(primary, primaryReference.get(), replicaSet, context);
+                    readOplog(primary, primaryReference.get(), replicaSet, context, schema);
                 });
             }
         }
@@ -118,7 +118,8 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
         }
     }
 
-    private void streamChangesForReplicaSets(ChangeEventSourceContext context, List<ReplicaSet> replicaSets) {
+    private void streamChangesForReplicaSets(ChangeEventSourceContext context, List<ReplicaSet> replicaSets,
+                                             MongoDbSchema schema) {
         final int threads = replicaSets.size();
         final ExecutorService executor = Threads.newFixedThreadPool(MongoDbConnector.class, taskContext.serverName(), "replicator-streaming", threads);
         final CountDownLatch latch = new CountDownLatch(threads);
@@ -128,7 +129,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
         replicaSets.forEach(replicaSet -> {
             executor.submit(() -> {
                 try {
-                    streamChangesForReplicaSet(context, replicaSet);
+                    streamChangesForReplicaSet(context, replicaSet, schema);
                 }
                 finally {
                     latch.countDown();
@@ -161,7 +162,8 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
         });
     }
 
-    private void readOplog(MongoClient primary, MongoPrimary primaryClient, ReplicaSet replicaSet, ChangeEventSourceContext context) {
+    private void readOplog(MongoClient primary, MongoPrimary primaryClient, ReplicaSet replicaSet,
+                           ChangeEventSourceContext context, MongoDbSchema schema) {
         final ReplicaSetOffsetContext rsOffsetContext = offsetContext.getReplicaSetOffsetContext(replicaSet);
 
         final BsonTimestamp oplogStart = rsOffsetContext.lastOffsetTimestamp();
@@ -209,7 +211,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
                 // In this situation if not document is available, we'll pause.
                 final Document event = cursor.tryNext();
                 if (event != null) {
-                    if (!handleOplogEvent(primaryAddress, event, event, 0, oplogContext, context)) {
+                    if (!handleOplogEvent(primaryAddress, event, event, 0, oplogContext, schema)) {
                         // Something happened and we are supposed to stop reading
                         return;
                     }
@@ -259,7 +261,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
     }
 
     private boolean handleOplogEvent(ServerAddress primaryAddress, Document event, Document masterEvent, long txOrder, ReplicaSetOplogContext oplogContext,
-                                     ChangeEventSourceContext context) {
+                                     MongoDbSchema schema) {
         String ns = event.getString("ns");
         Document object = event.get(OBJECT_FIELD, Document.class);
         if (Objects.isNull(object)) {
@@ -313,7 +315,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
                             LOGGER.debug("Skipping record as it is expected to be already processed: {}", change);
                             continue;
                         }
-                        final boolean r = handleOplogEvent(primaryAddress, change, event, txOrder, oplogContext, context);
+                        final boolean r = handleOplogEvent(primaryAddress, change, event, txOrder, oplogContext, schema);
                         if (!r) {
                             return false;
                         }
@@ -325,7 +327,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
             try {
                 dispatcher.dispatchTransactionStartedEvent(getTransactionId(event), oplogContext.getOffset());
                 for (Document change : txChanges) {
-                    final boolean r = handleOplogEvent(primaryAddress, change, event, ++txOrder, oplogContext, context);
+                    final boolean r = handleOplogEvent(primaryAddress, change, event, ++txOrder, oplogContext, schema);
                     if (!r) {
                         return false;
                     }
@@ -371,6 +373,7 @@ public class MongoDbStreamingChangeEventSource implements StreamingChangeEventSo
             if (taskContext.filters().collectionFilter().test(collectionId)) {
                 try {
                     return dispatcher.dispatchDataChangeEvent(
+                            schema,
                             collectionId,
                             new MongoDbChangeRecordEmitter(
                                     oplogContext.getOffset(),

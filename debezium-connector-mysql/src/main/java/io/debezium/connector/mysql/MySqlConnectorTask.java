@@ -6,6 +6,7 @@
 package io.debezium.connector.mysql;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -49,7 +50,7 @@ public class MySqlConnectorTask extends BaseSourceTask {
     private volatile ChangeEventQueue<DataChangeEvent> queue;
     private volatile MySqlConnection connection;
     private volatile ErrorHandler errorHandler;
-    private volatile MySqlDatabaseSchema schema;
+    private volatile List<MySqlDatabaseSchema> schemas = new ArrayList<>();
 
     @Override
     public String version() {
@@ -87,7 +88,8 @@ public class MySqlConnectorTask extends BaseSourceTask {
 
         final boolean tableIdCaseInsensitive = connection.isTableIdCaseSensitive();
 
-        this.schema = new MySqlDatabaseSchema(connectorConfig, valueConverters, topicSelector, schemaNameAdjuster, tableIdCaseInsensitive);
+        MySqlDatabaseSchema schema = new MySqlDatabaseSchema(connectorConfig, valueConverters, topicSelector, schemaNameAdjuster, tableIdCaseInsensitive);
+        schemas.add(schema);
 
         validateAndLoadDatabaseHistory(connectorConfig, previousOffset, schema);
         // If the binlog position is not available it is necessary to reexecute snapshot
@@ -114,7 +116,6 @@ public class MySqlConnectorTask extends BaseSourceTask {
         final EventDispatcher<TableId> dispatcher = new EventDispatcher<>(
                 connectorConfig,
                 topicSelector,
-                schema,
                 queue,
                 connectorConfig.getTableFilters().dataCollectionFilter(),
                 DataChangeEvent::new,
@@ -177,9 +178,7 @@ public class MySqlConnectorTask extends BaseSourceTask {
             LOGGER.error("Exception while closing JDBC connection", e);
         }
 
-        if (schema != null) {
-            schema.close();
-        }
+        schemas.forEach(MySqlDatabaseSchema::close);
     }
 
     @Override

@@ -35,7 +35,7 @@ import io.debezium.util.DelayStrategy;
  *
  * @author Horia Chiorean (hchiorea@redhat.com), Jiri Pechanec
  */
-public class PostgresStreamingChangeEventSource implements StreamingChangeEventSource {
+public class PostgresStreamingChangeEventSource implements StreamingChangeEventSource<PostgresSchema> {
 
     /**
      * Number of received events without sending anything to Kafka which will
@@ -53,7 +53,6 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
     private final EventDispatcher<TableId> dispatcher;
     private final ErrorHandler errorHandler;
     private final Clock clock;
-    private final PostgresSchema schema;
     private final PostgresOffsetContext offsetContext;
     private final PostgresConnectorConfig connectorConfig;
     private final PostgresTaskContext taskContext;
@@ -72,13 +71,12 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
 
     public PostgresStreamingChangeEventSource(PostgresConnectorConfig connectorConfig, Snapshotter snapshotter, PostgresOffsetContext offsetContext,
                                               PostgresConnection connection, EventDispatcher<TableId> dispatcher, ErrorHandler errorHandler, Clock clock,
-                                              PostgresSchema schema, PostgresTaskContext taskContext, ReplicationConnection replicationConnection) {
+                                              PostgresTaskContext taskContext, ReplicationConnection replicationConnection) {
         this.connectorConfig = connectorConfig;
         this.connection = connection;
         this.dispatcher = dispatcher;
         this.errorHandler = errorHandler;
         this.clock = clock;
-        this.schema = schema;
         this.offsetContext = (offsetContext != null) ? offsetContext : PostgresOffsetContext.initialContext(connectorConfig, connection, clock);
         // replication slot could exist at the time of starting Debezium so we will stream from the position in the slot
         // instead of the last position in the database
@@ -90,7 +88,7 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
     }
 
     @Override
-    public void execute(ChangeEventSourceContext context) throws InterruptedException {
+    public void execute(ChangeEventSourceContext context, PostgresSchema schema) throws InterruptedException {
         if (!snapshotter.shouldStream()) {
             LOGGER.info("Streaming is not enabled in correct configuration");
             return;
@@ -144,7 +142,7 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
                 stream = this.replicationStream.get();
                 stream.startKeepAlive(Executors.newSingleThreadExecutor());
             }
-            processMessages(context, stream);
+            processMessages(context, schema, stream);
         }
         catch (Throwable e) {
             errorHandler.setProducerThrowable(e);
@@ -175,7 +173,7 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
         }
     }
 
-    private void processMessages(ChangeEventSourceContext context, final ReplicationStream stream)
+    private void processMessages(ChangeEventSourceContext context, PostgresSchema schema, final ReplicationStream stream)
             throws SQLException, InterruptedException {
         LOGGER.info("Processing messages");
         int noMessageIterations = 0;
@@ -224,6 +222,7 @@ public class PostgresStreamingChangeEventSource implements StreamingChangeEventS
                             taskContext.getSlotXmin(connection));
 
                     boolean dispatched = message.getOperation() != Operation.NOOP && dispatcher.dispatchDataChangeEvent(
+                            schema,
                             tableId,
                             new PostgresChangeRecordEmitter(
                                     offsetContext,

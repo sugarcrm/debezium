@@ -34,25 +34,23 @@ import io.debezium.schema.SchemaChangeEvent;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
 import io.debezium.util.Clock;
 
-public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource {
+public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource<PostgresSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PostgresSnapshotChangeEventSource.class);
 
     private final PostgresConnectorConfig connectorConfig;
     private final PostgresConnection jdbcConnection;
-    private final PostgresSchema schema;
     private final Snapshotter snapshotter;
     private final SlotCreationResult slotCreatedInfo;
     private final SlotState startingSlotInfo;
     private final PostgresOffsetContext previousOffset;
 
     public PostgresSnapshotChangeEventSource(PostgresConnectorConfig connectorConfig, Snapshotter snapshotter, PostgresOffsetContext previousOffset,
-                                             PostgresConnection jdbcConnection, PostgresSchema schema, EventDispatcher<TableId> dispatcher, Clock clock,
+                                             PostgresConnection jdbcConnection, EventDispatcher<TableId> dispatcher, Clock clock,
                                              SnapshotProgressListener snapshotProgressListener, SlotCreationResult slotCreatedInfo, SlotState startingSlotInfo) {
         super(connectorConfig, previousOffset, jdbcConnection, dispatcher, clock, snapshotProgressListener);
         this.connectorConfig = connectorConfig;
         this.jdbcConnection = jdbcConnection;
-        this.schema = schema;
         this.snapshotter = snapshotter;
         this.slotCreatedInfo = slotCreatedInfo;
         this.startingSlotInfo = startingSlotInfo;
@@ -60,7 +58,7 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
     }
 
     @Override
-    protected SnapshottingTask getSnapshottingTask(OffsetContext previousOffset) {
+    protected SnapshottingTask getSnapshottingTask(PostgresSchema schema, OffsetContext previousOffset) {
         boolean snapshotSchema = true;
         boolean snapshotData = true;
 
@@ -82,7 +80,7 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
     }
 
     @Override
-    protected void connectionCreated(RelationalSnapshotContext snapshotContext) throws Exception {
+    protected void connectionCreated(RelationalSnapshotContext snapshotContext, PostgresSchema schema) throws Exception {
         // If using catch up streaming, the connector opens the transaction that the snapshot will eventually use
         // before the catch up streaming starts. By looking at the current wal location, the transaction can determine
         // where the catch up streaming should stop. The transaction is held open throughout the catch up
@@ -101,7 +99,7 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
     }
 
     @Override
-    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext)
+    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, PostgresSchema schema)
             throws SQLException, InterruptedException {
         final Duration lockTimeout = connectorConfig.snapshotLockTimeout();
         final Optional<String> lockStatement = snapshotter.snapshotTableLockingStatement(lockTimeout, snapshotContext.capturedTables);
@@ -182,7 +180,8 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
     }
 
     @Override
-    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext) throws SQLException, InterruptedException {
+    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, PostgresSchema schema)
+            throws SQLException, InterruptedException {
         Set<String> schemas = snapshotContext.capturedTables.stream()
                 .map(TableId::schema)
                 .collect(Collectors.toSet());
@@ -190,16 +189,16 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
         // reading info only for the schemas we're interested in as per the set of captured tables;
         // while the passed table name filter alone would skip all non-included tables, reading the schema
         // would take much longer that way
-        for (String schema : schemas) {
+        for (String schemaName : schemas) {
             if (!sourceContext.isRunning()) {
-                throw new InterruptedException("Interrupted while reading structure of schema " + schema);
+                throw new InterruptedException("Interrupted while reading structure of schema " + schemaName);
             }
 
             LOGGER.info("Reading structure of schema '{}'", snapshotContext.catalogName);
             jdbcConnection.readSchema(
                     snapshotContext.tables,
                     snapshotContext.catalogName,
-                    schema,
+                    schemaName,
                     connectorConfig.getTableFilters().dataCollectionFilter(),
                     null,
                     false);
@@ -227,12 +226,12 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
     }
 
     @Override
-    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, TableId tableId) {
+    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, PostgresSchema schema, TableId tableId) {
         return snapshotter.buildSnapshotQuery(tableId);
     }
 
     @Override
-    protected Object getColumnValue(ResultSet rs, int columnIndex, Column column) throws SQLException {
+    protected Object getColumnValue(PostgresSchema schema, ResultSet rs, int columnIndex, Column column) throws SQLException {
         try {
             final ResultSetMetaData metaData = rs.getMetaData();
             final String columnTypeName = metaData.getColumnTypeName(columnIndex);
@@ -285,7 +284,7 @@ public class PostgresSnapshotChangeEventSource extends RelationalSnapshotChangeE
         }
         catch (SQLException e) {
             // not a known type
-            return super.getColumnValue(rs, columnIndex, column);
+            return super.getColumnValue(schema, rs, columnIndex, column);
         }
     }
 

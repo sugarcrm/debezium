@@ -33,7 +33,7 @@ import io.debezium.schema.SchemaChangeEvent;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
 import io.debezium.util.Clock;
 
-public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource {
+public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChangeEventSource<SqlServerDatabaseSchema> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlServerSnapshotChangeEventSource.class);
 
@@ -44,20 +44,18 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
 
     private final SqlServerConnectorConfig connectorConfig;
     private final SqlServerConnection jdbcConnection;
-    private final SqlServerDatabaseSchema sqlServerDatabaseSchema;
     private Map<TableId, SqlServerChangeTable> changeTables;
 
     public SqlServerSnapshotChangeEventSource(SqlServerConnectorConfig connectorConfig, SqlServerOffsetContext previousOffset, SqlServerConnection jdbcConnection,
-                                              SqlServerDatabaseSchema schema, EventDispatcher<TableId> dispatcher, Clock clock,
+                                              EventDispatcher<TableId> dispatcher, Clock clock,
                                               SnapshotProgressListener snapshotProgressListener) {
-        super(connectorConfig, previousOffset, jdbcConnection, schema, dispatcher, clock, snapshotProgressListener);
+        super(connectorConfig, previousOffset, jdbcConnection, dispatcher, clock, snapshotProgressListener);
         this.connectorConfig = connectorConfig;
         this.jdbcConnection = jdbcConnection;
-        this.sqlServerDatabaseSchema = schema;
     }
 
     @Override
-    protected SnapshottingTask getSnapshottingTask(OffsetContext previousOffset) {
+    protected SnapshottingTask getSnapshottingTask(SqlServerDatabaseSchema schema, OffsetContext previousOffset) {
         boolean snapshotSchema = true;
         boolean snapshotData = true;
 
@@ -87,7 +85,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     }
 
     @Override
-    protected void connectionCreated(RelationalSnapshotContext snapshotContext) throws Exception {
+    protected void connectionCreated(RelationalSnapshotContext snapshotContext, SqlServerDatabaseSchema schema) throws Exception {
         ((SqlServerSnapshotContext) snapshotContext).isolationLevelBeforeStart = jdbcConnection.connection().getTransactionIsolation();
 
         if (connectorConfig.getSnapshotIsolationMode() == SnapshotIsolationMode.SNAPSHOT) {
@@ -106,7 +104,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     }
 
     @Override
-    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext)
+    protected void lockTablesForSchemaSnapshot(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, SqlServerDatabaseSchema schema)
             throws SQLException, InterruptedException {
         if (connectorConfig.getSnapshotIsolationMode() == SnapshotIsolationMode.READ_UNCOMMITTED) {
             jdbcConnection.connection().setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
@@ -166,7 +164,8 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     }
 
     @Override
-    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext) throws SQLException, InterruptedException {
+    protected void readTableStructure(ChangeEventSourceContext sourceContext, RelationalSnapshotContext snapshotContext, SqlServerDatabaseSchema schema)
+            throws SQLException, InterruptedException {
         Set<String> schemas = snapshotContext.capturedTables.stream()
                 .map(TableId::schema)
                 .collect(Collectors.toSet());
@@ -174,16 +173,16 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
         // reading info only for the schemas we're interested in as per the set of captured tables;
         // while the passed table name filter alone would skip all non-included tables, reading the schema
         // would take much longer that way
-        for (String schema : schemas) {
+        for (String schemaName : schemas) {
             if (!sourceContext.isRunning()) {
-                throw new InterruptedException("Interrupted while reading structure of schema " + schema);
+                throw new InterruptedException("Interrupted while reading structure of schema " + schemaName);
             }
 
             LOGGER.info("Reading structure of schema '{}'", snapshotContext.catalogName);
             jdbcConnection.readSchema(
                     snapshotContext.tables,
                     snapshotContext.catalogName,
-                    schema,
+                    schemaName,
                     connectorConfig.getTableFilters().dataCollectionFilter(),
                     null,
                     false);
@@ -242,19 +241,19 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
      * @return a valid query string
      */
     @Override
-    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, TableId tableId) {
-        String modifiedColumns = checkExcludedColumns(tableId);
+    protected Optional<String> getSnapshotSelect(RelationalSnapshotContext snapshotContext, SqlServerDatabaseSchema schema, TableId tableId) {
+        String modifiedColumns = checkExcludedColumns(schema, tableId);
         return Optional.of(String.format("SELECT %s FROM [%s].[%s]", modifiedColumns, tableId.schema(), tableId.table()));
     }
 
     @Override
-    protected String enhanceOverriddenSelect(RelationalSnapshotContext snapshotContext, String overriddenSelect, TableId tableId) {
-        String modifiedColumns = checkExcludedColumns(tableId);
+    protected String enhanceOverriddenSelect(SqlServerDatabaseSchema schema, RelationalSnapshotContext snapshotContext, String overriddenSelect, TableId tableId) {
+        String modifiedColumns = checkExcludedColumns(schema, tableId);
         return overriddenSelect.replaceAll("\\*", modifiedColumns);
     }
 
-    private String checkExcludedColumns(TableId tableId) {
-        Table table = sqlServerDatabaseSchema.tableFor(tableId);
+    private String checkExcludedColumns(SqlServerDatabaseSchema schema, TableId tableId) {
+        Table table = schema.tableFor(tableId);
         return table.retrieveColumnNames().stream()
                 .filter(columnName -> filterChangeTableColumns(tableId, columnName))
                 .filter(columnName -> connectorConfig.getColumnFilter().matches(tableId.catalog(), tableId.schema(), tableId.table(), columnName))
@@ -282,7 +281,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     }
 
     @Override
-    protected Object getColumnValue(ResultSet rs, int columnIndex, Column column) throws SQLException {
+    protected Object getColumnValue(SqlServerDatabaseSchema schema, ResultSet rs, int columnIndex, Column column) throws SQLException {
         final ResultSetMetaData metaData = rs.getMetaData();
         final int columnType = metaData.getColumnType(columnIndex);
 
@@ -290,7 +289,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
             return rs.getTimestamp(columnIndex);
         }
         else {
-            return super.getColumnValue(rs, columnIndex, column);
+            return super.getColumnValue(schema, rs, columnIndex, column);
         }
     }
 

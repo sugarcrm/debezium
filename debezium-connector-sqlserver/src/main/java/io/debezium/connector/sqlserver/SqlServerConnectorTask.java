@@ -6,6 +6,7 @@
 package io.debezium.connector.sqlserver;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -48,7 +49,7 @@ public class SqlServerConnectorTask extends BaseSourceTask {
     private volatile SqlServerConnection dataConnection;
     private volatile SqlServerConnection metadataConnection;
     private volatile ErrorHandler errorHandler;
-    private volatile SqlServerDatabaseSchema schema;
+    private volatile List<SqlServerDatabaseSchema> schemas = new ArrayList<>();
 
     @Override
     public String version() {
@@ -81,8 +82,10 @@ public class SqlServerConnectorTask extends BaseSourceTask {
         catch (SQLException e) {
             throw new ConnectException(e);
         }
-        this.schema = new SqlServerDatabaseSchema(connectorConfig, valueConverters, topicSelector, schemaNameAdjuster);
-        this.schema.initializeStorage();
+
+        SqlServerDatabaseSchema schema = new SqlServerDatabaseSchema(connectorConfig, valueConverters, topicSelector, schemaNameAdjuster);
+        schema.initializeStorage();
+        schemas.add(schema);
 
         final OffsetContext previousOffset = getPreviousOffset(new SqlServerOffsetContext.Loader(connectorConfig));
         if (previousOffset != null) {
@@ -107,7 +110,6 @@ public class SqlServerConnectorTask extends BaseSourceTask {
         final EventDispatcher<TableId> dispatcher = new EventDispatcher<>(
                 connectorConfig,
                 topicSelector,
-                schema,
                 queue,
                 connectorConfig.getTableFilters().dataCollectionFilter(),
                 DataChangeEvent::new,
@@ -119,7 +121,7 @@ public class SqlServerConnectorTask extends BaseSourceTask {
                 errorHandler,
                 SqlServerConnector.class,
                 connectorConfig,
-                new SqlServerChangeEventSourceFactory(connectorConfig, dataConnection, metadataConnection, errorHandler, dispatcher, clock, schema),
+                new SqlServerChangeEventSourceFactory(connectorConfig, dataConnection, metadataConnection, errorHandler, dispatcher, clock),
                 new DefaultChangeEventSourceMetricsFactory(),
                 dispatcher,
                 schema);
@@ -160,9 +162,7 @@ public class SqlServerConnectorTask extends BaseSourceTask {
             LOGGER.error("Exception while closing JDBC metadata connection", e);
         }
 
-        if (schema != null) {
-            schema.close();
-        }
+        schemas.forEach(SqlServerDatabaseSchema::close);
     }
 
     @Override

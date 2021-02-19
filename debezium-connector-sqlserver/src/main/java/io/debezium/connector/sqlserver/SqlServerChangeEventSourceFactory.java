@@ -23,22 +23,20 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
     private final ErrorHandler errorHandler;
     private final EventDispatcher<TableId> dispatcher;
     private final Clock clock;
-    private final SqlServerDatabaseSchema schema;
 
     public SqlServerChangeEventSourceFactory(SqlServerConnectorConfig configuration, SqlServerConnection dataConnection, SqlServerConnection metadataConnection,
-                                             ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock, SqlServerDatabaseSchema schema) {
+                                             ErrorHandler errorHandler, EventDispatcher<TableId> dispatcher, Clock clock) {
         this.configuration = configuration;
         this.dataConnection = dataConnection;
         this.metadataConnection = metadataConnection;
         this.errorHandler = errorHandler;
         this.dispatcher = dispatcher;
         this.clock = clock;
-        this.schema = schema;
     }
 
     @Override
     public SnapshotChangeEventSource getSnapshotChangeEventSource(OffsetContext offsetContext, SnapshotProgressListener snapshotProgressListener) {
-        return new SqlServerSnapshotChangeEventSource(configuration, (SqlServerOffsetContext) offsetContext, dataConnection, schema, dispatcher, clock,
+        return new SqlServerSnapshotChangeEventSource(configuration, (SqlServerOffsetContext) offsetContext, dataConnection, dispatcher, clock,
                 snapshotProgressListener);
     }
 
@@ -51,7 +49,6 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
                 metadataConnection,
                 dispatcher,
                 errorHandler,
-                clock,
-                schema);
+                clock);
     }
 }

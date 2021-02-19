@@ -5,6 +5,7 @@
  */
 package io.debezium.connector.mongodb;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -55,7 +56,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask {
     private volatile String taskName;
     private volatile MongoDbTaskContext taskContext;
     private volatile ErrorHandler errorHandler;
-    private volatile MongoDbSchema schema;
+    private volatile List<MongoDbSchema> schemas = new ArrayList<>();
 
     @Override
     public String version() {
@@ -71,7 +72,9 @@ public final class MongoDbConnectorTask extends BaseSourceTask {
         this.taskContext = new MongoDbTaskContext(config);
 
         final Schema structSchema = connectorConfig.getSourceInfoStructMaker().schema();
-        this.schema = new MongoDbSchema(taskContext.filters(), taskContext.topicSelector(), structSchema);
+
+        MongoDbSchema schema = new MongoDbSchema(taskContext.filters(), taskContext.topicSelector(), structSchema);
+        schemas.add(schema);
 
         final ReplicaSets replicaSets = getReplicaSets(config);
         final MongoDbOffsetContext previousOffsets = getPreviousOffsets(connectorConfig, replicaSets);
@@ -96,7 +99,6 @@ public final class MongoDbConnectorTask extends BaseSourceTask {
             final EventDispatcher<CollectionId> dispatcher = new EventDispatcher<>(
                     connectorConfig,
                     taskContext.topicSelector(),
-                    schema,
                     queue,
                     taskContext.filters().collectionFilter()::test,
                     DataChangeEvent::new,
@@ -138,9 +140,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask {
     public void doStop() {
         PreviousContext previousLogContext = this.taskContext.configureLoggingContext(taskName);
         try {
-            if (schema != null) {
-                schema.close();
-            }
+            schemas.forEach(MongoDbSchema::close);
         }
         finally {
             previousLogContext.restore();

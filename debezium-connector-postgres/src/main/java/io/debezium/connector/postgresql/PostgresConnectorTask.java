@@ -10,6 +10,7 @@ import java.nio.charset.Charset;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -57,7 +58,7 @@ public class PostgresConnectorTask extends BaseSourceTask {
     private volatile ChangeEventQueue<DataChangeEvent> queue;
     private volatile PostgresConnection jdbcConnection;
     private volatile PostgresConnection heartbeatConnection;
-    private volatile PostgresSchema schema;
+    private volatile List<PostgresSchema> schemas = new ArrayList<>();
 
     @Override
     public ChangeEventSourceCoordinator start(Configuration config) {
@@ -83,7 +84,9 @@ public class PostgresConnectorTask extends BaseSourceTask {
         final TypeRegistry typeRegistry = jdbcConnection.getTypeRegistry();
         final Charset databaseCharset = jdbcConnection.getDatabaseCharset();
 
-        schema = new PostgresSchema(connectorConfig, typeRegistry, databaseCharset, topicSelector);
+        PostgresSchema schema = new PostgresSchema(connectorConfig, typeRegistry, databaseCharset, topicSelector);
+        schemas.add(schema);
+
         this.taskContext = new PostgresTaskContext(connectorConfig, schema, topicSelector);
         final PostgresOffsetContext previousOffset = (PostgresOffsetContext) getPreviousOffset(new PostgresOffsetContext.Loader(connectorConfig));
         final Clock clock = Clock.system();
@@ -180,7 +183,6 @@ public class PostgresConnectorTask extends BaseSourceTask {
             final EventDispatcher<TableId> dispatcher = new EventDispatcher<>(
                     connectorConfig,
                     topicSelector,
-                    schema,
                     queue,
                     connectorConfig.getTableFilters().dataCollectionFilter(),
                     DataChangeEvent::new,
@@ -201,7 +203,6 @@ public class PostgresConnectorTask extends BaseSourceTask {
                             errorHandler,
                             dispatcher,
                             clock,
-                            schema,
                             taskContext,
                             replicationConnection,
                             slotCreatedInfo,
@@ -273,9 +274,7 @@ public class PostgresConnectorTask extends BaseSourceTask {
             heartbeatConnection.close();
         }
 
-        if (schema != null) {
-            schema.close();
-        }
+        schemas.forEach(PostgresSchema::close);
     }
 
     @Override

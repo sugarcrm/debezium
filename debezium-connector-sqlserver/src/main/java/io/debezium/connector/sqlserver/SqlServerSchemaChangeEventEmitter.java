@@ -18,12 +18,15 @@ import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
 public class SqlServerSchemaChangeEventEmitter implements SchemaChangeEventEmitter {
 
     private final SqlServerOffsetContext offsetContext;
+    private final SqlServerDatabaseSchema schema;
     private final SqlServerChangeTable changeTable;
     private final Table tableSchema;
     private final SchemaChangeEventType eventType;
 
-    public SqlServerSchemaChangeEventEmitter(SqlServerOffsetContext offsetContext, SqlServerChangeTable changeTable, Table tableSchema, SchemaChangeEventType eventType) {
+    public SqlServerSchemaChangeEventEmitter(SqlServerOffsetContext offsetContext, SqlServerDatabaseSchema schema, SqlServerChangeTable changeTable, Table tableSchema,
+                                             SchemaChangeEventType eventType) {
         this.offsetContext = offsetContext;
+        this.schema = schema;
         this.changeTable = changeTable;
         this.tableSchema = tableSchema;
         this.eventType = eventType;
@@ -42,6 +45,6 @@ public class SqlServerSchemaChangeEventEmitter implements SchemaChangeEventEmitt
                 eventType,
                 false);
 
-        receiver.schemaChangeEvent(event);
+        receiver.schemaChangeEvent(schema, event);
     }
 }
