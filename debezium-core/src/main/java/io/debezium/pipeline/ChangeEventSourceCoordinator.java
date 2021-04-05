@@ -7,6 +7,7 @@ package io.debezium.pipeline;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -125,7 +126,7 @@ public class ChangeEventSourceCoordinator<P extends TaskPartition, O extends Off
                 }
 
                 final Metronome metronome = Metronome.sleeper(pollInterval, clock);
-                Map<P, StreamingResult<O>> partitionStreamingResults = new HashMap<>();
+                Map<P, StreamingResult<O>> partitionStreamingResults = new LinkedHashMap<>();
                 while (running) {
                     for (Map.Entry<P, SnapshotResult<O>> entry : partitionState.entrySet()) {
                         partition = entry.getKey();
