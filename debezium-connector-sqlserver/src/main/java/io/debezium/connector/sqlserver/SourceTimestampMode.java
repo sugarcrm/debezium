@@ -6,9 +6,12 @@
 package io.debezium.connector.sqlserver;
 
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import io.debezium.config.EnumeratedValue;
 import io.debezium.util.Clock;
@@ -23,7 +26,7 @@ public enum SourceTimestampMode implements EnumeratedValue {
      */
     COMMIT("commit") {
         @Override
-        protected Instant getTimestamp(SqlServerConnection connection, ResultSet resultSet, Clock clock) throws SQLException {
+        protected Instant getTimestamp(SqlServerConnection connection, Clock clock, ResultSet resultSet) throws SQLException {
             return connection.normalize(resultSet.getTimestamp(resultSet.getMetaData().getColumnCount()));
         }
 
@@ -36,9 +39,8 @@ public enum SourceTimestampMode implements EnumeratedValue {
          * the TIMESTAMP value into an {@code Instant}.
          */
         @Override
-        protected String lsnTimestampSelectStatement(String databaseName, boolean supportsAtTimeZone) {
-            String result = ", " + SqlServerConnection.LSN_TIMESTAMP_SELECT_STATEMENT
-                    .replace(SqlServerConnection.DATABASE_NAME_PLACEHOLDER, databaseName);
+        protected String lsnTimestampSelectStatement(boolean supportsAtTimeZone) {
+            String result = ", " + SqlServerConnection.LSN_TIMESTAMP_SELECT_STATEMENT;
             if (supportsAtTimeZone) {
                 result += " " + SqlServerConnection.AT_TIME_ZONE_UTC;
             }
@@ -48,15 +50,18 @@ public enum SourceTimestampMode implements EnumeratedValue {
 
     /**
      * This mode will set the source timestamp field (ts_ms) of when the record was processed by Debezium.
+     *
+     * @deprecated Use {@link #COMMIT} instead.
      */
+    @Deprecated
     PROCESSING("processing") {
         @Override
-        protected Instant getTimestamp(SqlServerConnection connection, ResultSet resultSet, Clock clock) {
+        protected Instant getTimestamp(SqlServerConnection connection, Clock clock, ResultSet resultSet) {
             return clock.currentTime();
         }
 
         @Override
-        protected String lsnTimestampSelectStatement(String databaseName, boolean supportsAtTimeZone) {
+        protected String lsnTimestampSelectStatement(boolean supportsAtTimeZone) {
             return "";
         }
     };
@@ -72,9 +77,40 @@ public enum SourceTimestampMode implements EnumeratedValue {
         return value;
     }
 
-    protected abstract Instant getTimestamp(SqlServerConnection connection, ResultSet resultSet, Clock clock) throws SQLException;
+    /**
+     * Returns the timestamp to be put in the source metadata of the event depending on the mode.
+     *
+     * @param connection Server connection used to fetch the result set
+     * @param clock System clock to source processing time from
+     * @param resultSet  Result set representing the CDC event and its commit timestamp, if required by the mode
+     */
+    protected abstract Instant getTimestamp(SqlServerConnection connection, Clock clock, ResultSet resultSet) throws SQLException;
 
-    protected abstract String lsnTimestampSelectStatement(String databaseName, boolean supportsAtTimeZone);
+    /**
+     * Returns the SQL fragment to be embedded into the {@code GET_ALL_CHANGES_FOR_TABLE} query depending on the mode.
+     *
+     * @param supportsAtTimeZone Whether the server supports the {@code AT TIME ZONE} clause
+     */
+    protected abstract String lsnTimestampSelectStatement(boolean supportsAtTimeZone);
+
+    /**
+     * Returns the names of the data columns returned by the {@code GET_ALL_CHANGES_FOR_TABLE} query.
+     *
+     * @param rsmd Result set metadata
+     * @param columnDataOffset Offset of the first data column in the result set
+     */
+    protected List<String> getResultColumnNames(ResultSetMetaData rsmd, int columnDataOffset) throws SQLException {
+        int columnCount = rsmd.getColumnCount() - (columnDataOffset - 1);
+        if (equals(COMMIT)) {
+            // the last column in the {@code COMMIT} is the commit timestamp
+            columnCount -= 1;
+        }
+        final List<String> columns = new ArrayList<>(columnCount);
+        for (int i = 0; i < columnCount; ++i) {
+            columns.add(rsmd.getColumnName(columnDataOffset + i));
+        }
+        return columns;
+    }
 
     public static SourceTimestampMode getDefaultMode() {
         return COMMIT;

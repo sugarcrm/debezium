@@ -48,6 +48,7 @@ Braden Groom
 Braden Staudacher
 Brandon Brown
 Brandon Maguire
+Cao Manh Dat
 Cheng Pan
 Ching Tsai
 Chris Cranford
@@ -74,6 +75,7 @@ Denis Andrejew
 Denis Mikhaylov
 Dennis Campagna
 Dennis Persson
+Derek Moore
 Duncan Sands
 Echo Xu
 Ed Laur
@@ -142,6 +144,7 @@ Johan Venant
 John Graf
 John Martin
 John Psoroulas
+John Wu
 Jon Casstevens
 Jonas Lins
 Jordan Bragg
@@ -155,6 +158,7 @@ Jun Du
 Jure Kajzer
 Justin Hiza
 Kaushik Iyer
+Kazuki MATSUDA / 松田一樹
 Keith Barber
 Kevin Pullin
 Kewei Shang
@@ -206,6 +210,7 @@ Nishant Singh
 Nitin Agarwal
 Olavi Mustanoja
 Oliver Weiler
+Olivier Jacquemart
 Olivier Lemasle
 Omar Al-Safi
 Ori Popowski
@@ -260,6 +265,7 @@ SiuFay
 Siddhant Agnihotry
 Stanley Shyiko
 Stathis Souris
+Stefan Miklosovic
 Stephen Powis
 Steven Siahetiong
 Syed Muhammad Sufyian
@@ -268,6 +274,7 @@ Tautvydas Januskevicius
 Taylor Rolison
 Theofanis Despoudis
 Thierry De Leeuw
+Thomas Aregger
 Thomas Deblock
 Thomas Prelle
 Thomas Thornton

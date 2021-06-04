@@ -119,7 +119,7 @@ alter_function
     ;
 
 create_function_body
-    : CREATE (OR REPLACE)? FUNCTION function_name ('(' parameter (',' parameter)* ')')?
+    : CREATE (OR REPLACE)? FUNCTION function_name parameters_clause
       RETURN type_spec (invoker_rights_clause | parallel_enable_clause | result_cache_clause | DETERMINISTIC)*
       ((PIPELINED? (IS | AS) (DECLARE? seq_of_declare_specs? body | call_spec)) | (PIPELINED | AGGREGATE) USING implementation_type_name) ';'
     ;
@@ -178,11 +178,11 @@ package_obj_spec
     ;
 
 procedure_spec
-    : PROCEDURE identifier ('(' parameter ( ',' parameter )* ')')? ';'
+    : PROCEDURE identifier parameters_clause ';'
     ;
 
 function_spec
-    : FUNCTION identifier ('(' parameter ( ',' parameter)* ')')?
+    : FUNCTION identifier parameters_clause
       RETURN type_spec PIPELINED? DETERMINISTIC? (RESULT_CACHE)? ';'
     ;
 
@@ -209,19 +209,19 @@ alter_procedure
     ;
 
 function_body
-    : FUNCTION identifier ('(' parameter (',' parameter)* ')')?
+    : FUNCTION identifier parameters_clause
       RETURN type_spec (invoker_rights_clause | parallel_enable_clause | result_cache_clause | DETERMINISTIC)*
       ((PIPELINED? DETERMINISTIC? (IS | AS) (DECLARE? seq_of_declare_specs? body | call_spec)) | (PIPELINED | AGGREGATE) USING implementation_type_name) ';'
     ;
 
 procedure_body
-    : PROCEDURE identifier ('(' parameter (',' parameter)* ')')? (IS | AS)
+    : PROCEDURE identifier parameters_clause (IS | AS)?
       (DECLARE? seq_of_declare_specs? body | call_spec | EXTERNAL) ';'
     ;
 
 create_procedure_body
-    : CREATE (OR REPLACE)? PROCEDURE procedure_name ('(' parameter (',' parameter)* ')')?
-      invoker_rights_clause? (IS | AS)
+    : CREATE (OR REPLACE)? PROCEDURE procedure_name parameters_clause
+      invoker_rights_clause? (IS | AS)?
       (DECLARE? seq_of_declare_specs? body | call_spec | EXTERNAL) ';'
     ;
 
@@ -1744,6 +1744,7 @@ create_cluster
 
 create_table
     : CREATE (GLOBAL TEMPORARY)? TABLE tableview_name
+        (SHARING '=' (NONE | METADATA | DATA | EXTENDED DATA))?
         (relational_table | object_table | xmltype_table) (AS select_only_statement)?
       ';'
     ;
@@ -2140,7 +2141,7 @@ truncate_table
     ;
 
 drop_table
-    : DROP TABLE tableview_name PURGE? SEMICOLON
+    : DROP TABLE tableview_name (AS tableview_name)? PURGE? SEMICOLON
     ;
 
 drop_view
@@ -2491,7 +2492,7 @@ alter_table
       | alter_table_properties
       | constraint_clauses
       | column_clauses
-//TODO      | alter_table_partitioning
+      | alter_table_partitioning
 //TODO      | alter_external_table
       | move_table_clause
       )
@@ -2524,6 +2525,43 @@ alter_table_properties_1
       | flashback_archive_clause
       )+
       alter_iot_clauses?
+    ;
+
+alter_table_partitioning
+    : add_table_partition
+    | drop_table_partition
+    | merge_table_partition
+    | modify_table_partition
+    | split_table_partition
+    | truncate_table_partition
+    ;
+
+add_table_partition
+    : ADD range_partition_desc
+    | ADD list_partition_desc
+    | ADD PARTITION partition_name (TABLESPACE tablespace)? key_compression? UNUSABLE?
+    ;
+
+drop_table_partition
+    : DROP PARTITION partition_name (UPDATE GLOBAL INDEXES)?
+    ;
+
+merge_table_partition
+    : MERGE PARTITION partition_name AND partition_name INTO PARTITION partition_name
+    ;
+
+modify_table_partition
+    : MODIFY PARTITION partition_name (ADD | DROP) list_values_clause
+    ;
+
+split_table_partition
+    : SPLIT PARTITION partition_name INTO '('
+            (range_partition_desc (',' range_partition_desc)* |
+                list_partition_desc (',' list_partition_desc)* ) ')'
+    ;
+
+truncate_table_partition
+    : TRUNCATE PARTITION partition_name
     ;
 
 alter_iot_clauses
@@ -2659,7 +2697,8 @@ modify_col_substitutable
     ;
 
 add_column_clause
-    : ADD ('(' (column_definition | virtual_column_definition) (',' (column_definition
+    : ADD column_definition | virtual_column_definition
+    | ADD ('(' (column_definition | virtual_column_definition) (',' (column_definition
               | virtual_column_definition)
               )*
           ')'
@@ -2941,6 +2980,11 @@ c_agent_in_clause
 
 c_parameters_clause
     : PARAMETERS '(' (expressions | '.' '.' '.') ')'
+    ;
+
+parameters_clause
+    : ('(' parameter (',' parameter)* ')')?
+    | ('(' ')')?
     ;
 
 parameter

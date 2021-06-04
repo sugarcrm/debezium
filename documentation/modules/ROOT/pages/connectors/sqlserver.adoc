@@ -130,6 +130,8 @@ The level of the lock is determined by `snapshot.isolation.mode` configuration o
 The resulting initial snapshot captures the current state of each row in the tables that are enabled for CDC.
 From this baseline state, the connector captures subsequent changes as they occur.
 
+include::{partialsdir}/modules/all-connectors/ref-connector-incremental-snapshot.adoc[leveloffset=+3]
+
 // Type: concept
 // ModuleID: how-the-debezium-sql-server-connector-reads-change-data-tables
 // Title: How {prodname} SQL Server connectors read change data tables
@@ -1663,7 +1665,7 @@ You then need to create the following custom resources (CRs):
 * SQL Server is running and you completed the steps to {LinkDebeziumUserGuide}#setting-up-sql-server-for-use-with-the-debezium-sql-server-connector[set up SQL Server to work with a {prodname} connector].
 
 * {StreamsName} is deployed on OpenShift and is running Apache Kafka and Kafka Connect.
-  For more information, see link:{LinkStreamsOpenShift}:/getting-started-str[{NameDebeziumInstallOpenShift}]
+  For more information, see link:{LinkDeployStreamsOpenShift}[{NameDeployStreamsOpenShift}]
 
 * Podman or Docker is installed.
 
@@ -2159,14 +2161,6 @@ twice - once in initial snapshot and once in streaming phase. Nonetheless, that 
 data mirroring.
 For `read_uncommitted` there are no data consistency guarantees at all (some data might be lost or corrupted).
 
-|[[sqlserver-property-source-timestamp-mode]]<<sqlserver-property-source-timestamp-mode, `+source.timestamp.mode+`>>
-|_commit_
-a|String that represents the criteria of the attached timestamp within the source record (ts_ms).
-
-* `commit` (default) sets the source timestamp to the time when the record was committed to the database.
-* `processing` sets the source timestamp to the time when {prodname} accesses the record in the change table.
-Use the `processing` option if you want {prodname] to set the top level `ts_ms` value, or if you want to avoid the additional cost of {prodname} querying the database to extract the LSN timestamps.
-
 |[[sqlserver-property-event-processing-failure-handling-mode]]<<sqlserver-property-event-processing-failure-handling-mode, `+event.processing.failure.handling.mode+`>>
 |`fail`
 | Specifies how the connector should react to exceptions during processing of events.
@@ -2272,6 +2266,11 @@ See {link-prefix}:{link-sqlserver-connector}#sqlserver-transaction-metadata[Tran
 | comma-separated list of operation types that will be skipped during streaming.
 The operations include: `c` for inserts/create, `u` for updates, and `d` for deletes.
 By default, no operations are skipped.
+
+|[[sqlserver-property-signal-data-collection]]<<sqlserver-property-signal-data-collection, `+signal.data.collection+`>>
+|
+| Fully-qualified name of the data collection that is used to send {link-prefix}:{link-signalling}[signals] to the connector.
+The name format is _database_name.schema-name.table-name_.
 
 |===
 

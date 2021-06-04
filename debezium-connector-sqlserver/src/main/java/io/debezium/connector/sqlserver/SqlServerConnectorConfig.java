@@ -254,11 +254,19 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
             .withDescription("The timezone of the server used to correctly shift the commit transaction timestamp on the client side"
                     + "Options include: Any valid Java ZoneId");
 
+    public static final Field MAX_LSN_OPTIMIZATION = Field.createInternal("streaming.lsn.optimization")
+            .withDisplayName("Max LSN Optimization")
+            .withDefault(true)
+            .withType(Type.BOOLEAN)
+            .withImportance(Importance.LOW)
+            .withDescription("This property can be used to enable/disable an optimization that prevents querying the cdc tables on LSNs not correlated to changes.");
+
     public static final Field MAX_TRANSACTIONS_PER_ITERATION = Field.create(MAX_TRANSACTIONS_PER_ITERATION_CONFIG_NAME)
             .withDisplayName("Max transactions per iteration")
             .withDefault(DEFAULT_MAX_TRANSACTIONS_PER_ITERATION)
             .withType(Type.INT)
-            .withImportance(Importance.LOW)
+            .withImportance(Importance.MEDIUM)
+            .withValidation(Field::isNonNegativeInteger)
             .withDescription("This property can be used to reduce the connector memory usage footprint when changes are streamed from multiple tables per database.");
 
     public static final Field SOURCE_TIMESTAMP_MODE = Field.create(SOURCE_TIMESTAMP_MODE_CONFIG_NAME)
@@ -271,7 +279,8 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
                     "Options include:" +
                     "'" + SourceTimestampMode.COMMIT.getValue() + "', (default) the source timestamp is set to the instant where the record was committed in the database"
                     +
-                    "'" + SourceTimestampMode.PROCESSING.getValue() + "', the source timestamp is set to the instant where the record was processed by Debezium.");
+                    "'" + SourceTimestampMode.PROCESSING.getValue()
+                    + "', (deprecated) the source timestamp is set to the instant where the record was processed by Debezium.");
 
     public static final Field SNAPSHOT_MODE = Field.create("snapshot.mode")
             .withDisplayName("Snapshot mode")
@@ -368,6 +377,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
         this.sourceTimestampMode = SourceTimestampMode.fromMode(config.getString(SOURCE_TIMESTAMP_MODE_CONFIG_NAME));
         this.maxTransactionsPerIteration = config.getInteger(MAX_TRANSACTIONS_PER_ITERATION);
+
+        if (!config.getBoolean(MAX_LSN_OPTIMIZATION)) {
+            LOGGER.warn("The option '{}' is no longer taken into account. The optimization is always enabled.", MAX_LSN_OPTIMIZATION.name());
+        }
     }
 
     public Configuration jdbcConfig() {

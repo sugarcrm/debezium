@@ -16,6 +16,7 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
 
 import io.debezium.connector.SnapshotRecord;
+import io.debezium.pipeline.source.snapshot.incremental.IncrementalSnapshotContext;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.pipeline.txmetadata.TransactionContext;
 import io.debezium.relational.TableId;
@@ -33,6 +34,7 @@ public class SqlServerOffsetContext implements OffsetContext {
     private final Map<String, ?> partition;
     private boolean snapshotCompleted;
     private final TransactionContext transactionContext;
+    private final IncrementalSnapshotContext<TableId> incrementalSnapshotContext;
 
     /**
      * The index of the current event within the current transaction.
@@ -42,8 +44,9 @@ public class SqlServerOffsetContext implements OffsetContext {
     private SqlServerStreamingExecutionState streamingExecutionState;
 
     public SqlServerOffsetContext(SqlServerConnectorConfig connectorConfig, Map<String, ?> partition, TxLogPosition position,
-                                  boolean snapshot, boolean snapshotCompleted, long eventSerialNo, TransactionContext transactionContext) {
-
+                                  boolean snapshot,
+                                  boolean snapshotCompleted, long eventSerialNo, TransactionContext transactionContext,
+                                  IncrementalSnapshotContext<TableId> incrementalSnapshotContext) {
         sourceInfo = new SourceInfo(connectorConfig);
         sourceInfo.setCommitLsn(position.getCommitLsn());
         sourceInfo.setChangeLsn(position.getInTxLsn());
@@ -60,12 +63,13 @@ public class SqlServerOffsetContext implements OffsetContext {
         }
         this.eventSerialNo = eventSerialNo;
         this.transactionContext = transactionContext;
+        this.incrementalSnapshotContext = incrementalSnapshotContext;
         this.streamingExecutionState = null;
     }
 
     public SqlServerOffsetContext(SqlServerConnectorConfig connectorConfig, Map<String, ?> partition, TxLogPosition position,
                                   boolean snapshot, boolean snapshotCompleted) {
-        this(connectorConfig, partition, position, snapshot, snapshotCompleted, 1, new TransactionContext());
+        this(connectorConfig, partition, position, snapshot, snapshotCompleted, 1, new TransactionContext(), new IncrementalSnapshotContext<>());
     }
 
     @Override
@@ -82,11 +86,11 @@ public class SqlServerOffsetContext implements OffsetContext {
                     SourceInfo.COMMIT_LSN_KEY, sourceInfo.getCommitLsn().toString());
         }
         else {
-            return transactionContext.store(Collect.hashMapOf(
+            return incrementalSnapshotContext.store(transactionContext.store(Collect.hashMapOf(
                     SourceInfo.COMMIT_LSN_KEY, sourceInfo.getCommitLsn().toString(),
                     SourceInfo.CHANGE_LSN_KEY,
                     sourceInfo.getChangeLsn() == null ? null : sourceInfo.getChangeLsn().toString(),
-                    SourceInfo.EVENT_SERIAL_NO_KEY, eventSerialNo));
+                    SourceInfo.EVENT_SERIAL_NO_KEY, eventSerialNo)));
         }
     }
 
@@ -172,7 +176,7 @@ public class SqlServerOffsetContext implements OffsetContext {
             }
 
             return new SqlServerOffsetContext(connectorConfig, partition, TxLogPosition.valueOf(commitLsn, changeLsn), snapshot, snapshotCompleted, eventSerialNo,
-                    TransactionContext.load(offset));
+                    TransactionContext.load(offset), IncrementalSnapshotContext.load(offset, TableId.class));
         }
     }
 
@@ -201,6 +205,16 @@ public class SqlServerOffsetContext implements OffsetContext {
     @Override
     public TransactionContext getTransactionContext() {
         return transactionContext;
+    }
+
+    @Override
+    public void incrementalSnapshotEvents() {
+        sourceInfo.setSnapshot(SnapshotRecord.INCREMENTAL);
+    }
+
+    @Override
+    public IncrementalSnapshotContext<?> getIncrementalSnapshotContext() {
+        return incrementalSnapshotContext;
     }
 
     public void saveStreamingExecutionContext(Queue<SqlServerChangeTable> schemaChangeCheckpoints,

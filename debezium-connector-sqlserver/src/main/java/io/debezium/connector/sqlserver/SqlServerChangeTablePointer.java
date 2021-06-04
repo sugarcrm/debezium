@@ -8,7 +8,6 @@ package io.debezium.connector.sqlserver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,18 +45,14 @@ public class SqlServerChangeTablePointer extends ChangeTableResultSet<SqlServerC
 
     private ResultSetMapper<Object[]> resultSetMapper;
     private final ResultSet resultSet;
-    private final int columnDataOffset;
     private final SourceTimestampMode sourceTimestampMode;
+    private final int columnDataOffset;
 
     public SqlServerChangeTablePointer(SqlServerChangeTable changeTable, ResultSet resultSet, SourceTimestampMode sourceTimestampMode) {
-        this(changeTable, resultSet, sourceTimestampMode, COL_DATA);
-    }
-
-    public SqlServerChangeTablePointer(SqlServerChangeTable changeTable, ResultSet resultSet, SourceTimestampMode sourceTimestampMode, int columnDataOffset) {
-        super(changeTable, resultSet, columnDataOffset);
+        super(changeTable, resultSet, COL_DATA);
         // Store references to these because we can't get them from our superclass
         this.resultSet = resultSet;
-        this.columnDataOffset = columnDataOffset;
+        this.columnDataOffset = COL_DATA;
         this.sourceTimestampMode = sourceTimestampMode;
     }
 
@@ -115,7 +110,8 @@ public class SqlServerChangeTablePointer extends ChangeTableResultSet<SqlServerC
      */
     private ResultSetMapper<Object[]> createResultSetMapper(Table table) throws SQLException {
         ColumnUtils.MappedColumns columnMap = ColumnUtils.toMap(table);
-        final List<String> resultColumns = getResultColumnNames();
+        final List<String> resultColumns = sourceTimestampMode.getResultColumnNames(
+                resultSet.getMetaData(), columnDataOffset);
         final int resultColumnCount = resultColumns.size();
 
         final IndicesMapping indicesMapping = new IndicesMapping(columnMap.getSourceTableColumns(), resultColumns);
@@ -131,18 +127,6 @@ public class SqlServerChangeTablePointer extends ChangeTableResultSet<SqlServerC
             }
             return data;
         };
-    }
-
-    private List<String> getResultColumnNames() throws SQLException {
-        int columnCount = resultSet.getMetaData().getColumnCount() - (columnDataOffset - 1);
-        if (SourceTimestampMode.COMMIT.equals(sourceTimestampMode)) {
-            columnCount -= 1;
-        }
-        final List<String> columns = new ArrayList<>(columnCount);
-        for (int i = 0; i < columnCount; ++i) {
-            columns.add(resultSet.getMetaData().getColumnName(columnDataOffset + i));
-        }
-        return columns;
     }
 
     private class IndicesMapping {

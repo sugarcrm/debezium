@@ -2224,7 +2224,7 @@ functionCall
 specificFunction
     : (
       CURRENT_DATE | CURRENT_TIME | CURRENT_TIMESTAMP
-      | CURRENT_USER | LOCALTIME | UTC_TIMESTAMP
+      | CURRENT_USER | LOCALTIME | UTC_TIMESTAMP | SCHEMA
       ) ('(' ')')?                                                  #simpleFunctionCall
     | CONVERT '(' expression separator=',' convertedDataType ')'    #dataTypeFunctionCall
     | CONVERT '(' expression USING charsetName ')'                  #dataTypeFunctionCall
@@ -2310,6 +2310,13 @@ specificFunction
         datetimeFormat=(DATE | TIME | DATETIME)
         ',' stringLiteral
       ')'                                                           #getFormatFunctionCall
+    | JSON_VALUE
+      '(' expression
+       ',' expression
+         (RETURNING convertedDataType)?
+         ((NULL | ERROR | (DEFAULT defaultValue)) ON EMPTY)?
+         ((NULL | ERROR | (DEFAULT defaultValue)) ON ERROR)?
+       ')'                                                          #jsonValueFunctionCall
     ;
 
 caseFuncAlternative
@@ -2510,7 +2517,7 @@ keywordsCanBeId
     | MIN | MIN_ROWS | MODE | MODIFY | MUTEX | MYSQL | MYSQL_ERRNO | NAME | NAMES
     | NCHAR | NDB_STORED_USER | NEVER | NEXT | NO | NODEGROUP | NONE | NUMBER | OFFLINE | OFFSET
     | OF | OJ | OLD_PASSWORD | ONE | ONLINE | ONLY | OPEN | OPTIMIZER_COSTS
-    | OPTIONS | ORDER | OWNER | PACK_KEYS | PAGE | PARSER | PARTIAL
+    | OPTIONAL | OPTIONS | ORDER | OWNER | PACK_KEYS | PAGE | PARSER | PARTIAL
     | PARTITIONING | PARTITIONS | PASSWORD | PASSWORD_LOCK_TIME | PERSIST_RO_VARIABLES_ADMIN | PHASE | PLUGINS
     | PLUGIN_DIR | PLUGIN | PORT | PRECEDES | PREPARE | PRESERVE | PREV
     | PROCESSLIST | PROFILE | PROFILES | PROXY | QUERY | QUICK
@@ -2619,7 +2626,15 @@ functionNameBase
     | VALIDATE_PASSWORD_STRENGTH | VERSION | VISIBLE
     | WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS | WEEK | WEEKDAY
     | WEEKOFYEAR | WEIGHT_STRING | WITHIN | YEAR | YEARWEEK
-    | Y_FUNCTION | X_FUNCTION | JSON_VALID | JSON_SCHEMA_VALID
+    | Y_FUNCTION | X_FUNCTION
+    | JSON_ARRAY | JSON_OBJECT | JSON_QUOTE | JSON_CONTAINS | JSON_CONTAINS_PATH
+    | JSON_EXTRACT | JSON_KEYS | JSON_OVERLAPS | JSON_SEARCH | JSON_VALUE
+    | JSON_ARRAY_APPEND | JSON_ARRAY_INSERT | JSON_INSERT | JSON_MERGE
+    | JSON_MERGE_PATCH | JSON_MERGE_PRESERVE | JSON_REMOVE | JSON_REPLACE
+    | JSON_SET | JSON_UNQUOTE | JSON_DEPTH | JSON_LENGTH | JSON_TYPE
+    | JSON_VALID | JSON_TABLE | JSON_SCHEMA_VALID | JSON_SCHEMA_VALIDATION_REPORT
+    | JSON_PRETTY | JSON_STORAGE_FREE | JSON_STORAGE_SIZE | JSON_ARRAYAGG
+    | JSON_OBJECTAGG
     // MariaDB
     | LASTVAL | NEXTVAL | SETVAL
     ;

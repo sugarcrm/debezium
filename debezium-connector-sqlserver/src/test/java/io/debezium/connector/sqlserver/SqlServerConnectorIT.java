@@ -2563,7 +2563,7 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
 
         final Configuration config = TestHelper.defaultMultiDatabaseConfig()
                 .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
-                .with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 2)
+                .with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1)
                 .build();
 
         start(SqlServerConnector.class, config);

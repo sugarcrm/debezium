@@ -53,6 +53,14 @@ endif::product[]
 
 An overview of the MySQL topologies that the connector supports is useful for planning your application. To optimally configure and run a {prodname} MySQL connector, it is helpful to understand how the connector tracks the structure of tables, exposes schema changes, performs snapshots, and determines Kafka topic names.
 
+ifdef::community[]
+[NOTE]
+====
+The {prodname} MySQL connector has yet to be tested with MariaDB, but multiple reports from the community indicate successful usage of the connector with this database.
+Official support for MariaDB is planned for a future {prodname} version.
+====
+endif::community[]
+
 ifdef::product[]
 Details are in the following topics:
 
@@ -109,7 +117,7 @@ When the connector restarts after having crashed or been stopped gracefully, the
 This database history topic is for connector use only. The connector can optionally See {link-prefix}:{link-mysql-connector}#mysql-schema-change-topic[emit schema change events to a different topic that is intended for consumer applications].
 
 When the MySQL connector captures changes in a table to which a schema change tool such as `gh-ost` or `pt-online-schema-change` is applied there are helper tables created during the migration process.
-The connector needs to be configured to capture change to these helper tables. 
+The connector needs to be configured to capture change to these helper tables.
 If consumers do not need the records generated for helper tables then a single message transform can be applied to filter them out.
 
 See {link-prefix}:{link-mysql-connector}#mysql-topic-names[default names for topics] that receive {prodname} event records.
@@ -374,6 +382,8 @@ a|Commits the transaction.
 a|Records the completed snapshot in the connector offsets.
 
 |===
+
+include::{partialsdir}/modules/all-connectors/ref-connector-incremental-snapshot.adoc[leveloffset=+3]
 
 ifdef::community[]
 
@@ -1818,7 +1828,7 @@ You then need to create the following custom resources (CRs):
 * MySQL is running and you completed the steps to {LinkDebeziumUserGuide}#setting-up-mysql-to-run-a-debezium-connector[set up MySQL to work with a {prodname} connector].
 
 * {StreamsName} is deployed on OpenShift and is running Apache Kafka and Kafka Connect.
-  For more information, see link:{LinkStreamsOpenShift}:/getting-started-str[{NameDebeziumInstallOpenShift}].
+For more information, see link:{LinkDeployStreamsOpenShift}[{NameDeployStreamsOpenShift}].
 
 * Podman or Docker is installed.
 
@@ -2466,6 +2476,8 @@ NOTE: This feature is incubating. Feedback is encouraged. It is expected that th
  +
 `initial` - the connector runs a snapshot only when no offsets have been recorded for the logical server name. +
  +
+`initial_only` - the connector runs a snapshot only when no offsets have been recorded for the logical server name and then stops; i.e. it will not read change events from the binlog. +
+ +
 `when_needed` - the connector runs a snapshot upon startup whenever it deems it necessary. That is, when no offsets are available, or when a previously recorded offset specifies a binlog location or GTID that is not available in the server. +
  +
 `never` - the connector never uses snapshots. Upon first startup with a logical server name, the connector reads from the beginning of the binlog. Configure this behavior with care. It is valid only when the binlog is guaranteed to contain the entire history of the database. +
@@ -2560,6 +2572,11 @@ endif::community[]
 |
 |Comma-separated list of operation types to skip during streaming. The following values are possible: `c` for inserts/create, `u` for updates, `d` for deletes. By default, no operations are skipped.
 
+|[[mysql-property-signal-data-collection]]<<mysql-property-signal-data-collection, `+signal.data.collection+`>>
+|
+| Fully-qualified name of the data collection that is used to send {link-prefix}:{link-signalling}[signals] to the connector.
+The name format is _database-name.table-name_.
+
 |[[mysql-property-provide-transaction-metadata]]<<mysql-property-provide-transaction-metadata, `provide.transaction.metadata`>>
 |`false`
 |Determines whether the connector generates events with transaction boundaries and enriches change event envelopes with transaction metadata. Specify `true` if you want the connector to do this. See {link-prefix}:{link-mysql-connector}#mysql-transaction-metadata[Transaction metadata] for details.
@@ -2607,7 +2624,7 @@ In addition to the pass-through properties for the Kafka producer and consumer, 
 The {prodname} MySQL connector provides three types of metrics that are in addition to the built-in support for JMX metrics that Zookeeper, Kafka, and Kafka Connect provide.
 
 * {link-prefix}:{link-mysql-connector}#mysql-snapshot-metrics[Snapshot metrics] provide information about connector operation while performing a snapshot.
-* {link-prefix}:{link-mysql-connector}#mysql-binlog-metrics[Binlog metrics] provide information about connector operation when the connector is reading the binlog.
+* {link-prefix}:{link-mysql-connector}#mysql-streaming-metrics[Streaming metrics] provide information about connector operation when the connector is reading the binlog.
 * {link-prefix}:{link-mysql-connector}#mysql-schema-history-metrics[Schema history metrics] provide information about the status of the connector's schema history.
 
 {link-prefix}:{link-debezium-monitoring}[{prodname} monitoring documentation] provides details for how to expose these metrics by using JMX.
@@ -2625,20 +2642,20 @@ include::{partialsdir}/modules/all-connectors/ref-connector-monitoring-snapshot-
 The {prodname} MySQL connector also provides the `HoldingGlobalLock` custom snapshot metric. This metric is set to a Boolean value that indicates whether the connector currently holds a global or table write lock.
 
 // Type: reference
-// ModuleID: monitoring-debezium-mysql-connector-binlog-reading
-// Title: Monitoring {prodname} MySQL connector binlog reading
-[[mysql-binlog-metrics]]
-=== Binlog metrics
+// ModuleID: monitoring-debezium-mysql-connector-record-streaming
+// Title: Monitoring {prodname} MySQL connector record streaming
+[[mysql-streaming-metrics]]
+=== Streaming metrics
 
-The *MBean* is `debezium.mysql:type=connector-metrics,context=binlog,server=<database.server.name>`.
+The *MBean* is `debezium.mysql:type=connector-metrics,context=streaming,server=<database.server.name>`.
 
 Transaction-related attributes are available only if binlog event buffering is enabled. See {link-prefix}:{link-mysql-connector}#mysql-property-binlog-buffer-size[`binlog.buffer.size`] in the advanced connector configuration properties for more details.
 
 include::{partialsdir}/modules/all-connectors/ref-connector-monitoring-streaming-metrics.adoc[leveloffset=+1]
 
-The {prodname} MySQL connector also provides the following custom binlog metrics:
+The {prodname} MySQL connector also provides the following additional streaming metrics:
 
-.Descriptions of custom binlog metrics
+.Descriptions of additional streaming metrics
 [cols="3,2,5",options="header"]
 |===
 |Attribute |Type |Description

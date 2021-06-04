@@ -61,12 +61,11 @@ public class SqlServerConnection extends JdbcConnection {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlServerConnection.class);
 
     private static final String STATEMENTS_PLACEHOLDER = "#";
-    protected static final String DATABASE_NAME_PLACEHOLDER = "[#db]";
+    private static final String DATABASE_NAME_PLACEHOLDER = "[#db]";
     private static final String GET_MAX_LSN = "SELECT [#db].sys.fn_cdc_get_max_lsn()";
-    private static final String GET_LSN_TO_TIMESTAMP = "SELECT [#db].sys.fn_cdc_map_lsn_to_time(?)";
-
     private static final String GET_MAX_TRANSACTION_LSN = "SELECT MAX(start_lsn) FROM [#db].cdc.lsn_time_mapping WHERE tran_id <> 0x00";
-    private static final String GET_NTH_TRANSACTION_LSN = "SELECT MAX(start_lsn) FROM (SELECT TOP (?) start_lsn FROM [#db].cdc.lsn_time_mapping WHERE tran_id <> 0x00# ORDER BY start_lsn) as next_lsns";
+    private static final String GET_NTH_TRANSACTION_LSN_FROM_BEGINNING = "SELECT MAX(start_lsn) FROM (SELECT TOP (?) start_lsn FROM [#db].cdc.lsn_time_mapping WHERE tran_id <> 0x00 ORDER BY start_lsn) as next_lsns";
+    private static final String GET_NTH_TRANSACTION_LSN_FROM_LAST = "SELECT MAX(start_lsn) FROM (SELECT TOP (? + 1) start_lsn FROM [#db].cdc.lsn_time_mapping WHERE start_lsn >= ? AND tran_id <> 0x00 ORDER BY start_lsn) as next_lsns";
 
     private static final String GET_MIN_LSN = "SELECT [#db].sys.fn_cdc_get_min_lsn('#')";
     private static final String LOCK_TABLE = "SELECT * FROM [#] WITH (TABLOCKX)";
@@ -91,10 +90,8 @@ public class SqlServerConnection extends JdbcConnection {
             SqlServerConnection.class.getClassLoader(),
             JdbcConfiguration.PORT.withDefault(SqlServerConnectorConfig.PORT.defaultValueAsString()));
 
-    private final boolean supportsAtTimeZone;
     private final ZoneId transactionTimezone;
-    private final SourceTimestampMode sourceTimestampMode;
-    private final Clock clock;
+    private final String getAllChangesForTable;
     private final int queryFetchSize;
 
     private final SqlServerDefaultValueConverter defaultValueConverter;
@@ -123,10 +120,10 @@ public class SqlServerConnection extends JdbcConnection {
     public SqlServerConnection(Configuration config, Clock clock, SourceTimestampMode sourceTimestampMode, SqlServerValueConverters valueConverters,
                                Supplier<ClassLoader> classLoaderSupplier) {
         super(config, FACTORY, classLoaderSupplier);
-        supportsAtTimeZone = supportsAtTimeZone();
-        transactionTimezone = retrieveTransactionTimezone();
-        this.clock = clock;
-        this.sourceTimestampMode = sourceTimestampMode;
+        boolean supportsAtTimeZone = supportsAtTimeZone();
+        transactionTimezone = retrieveTransactionTimezone(supportsAtTimeZone);
+        getAllChangesForTable = GET_ALL_CHANGES_FOR_TABLE.replaceFirst(STATEMENTS_PLACEHOLDER,
+                Matcher.quoteReplacement(sourceTimestampMode.lsnTimestampSelectStatement(supportsAtTimeZone)));
         defaultValueConverter = new SqlServerDefaultValueConverter(this::connection, valueConverters);
         this.queryFetchSize = config().getInteger(CommonConnectorConfig.QUERY_FETCH_SIZE);
     }
@@ -153,23 +150,29 @@ public class SqlServerConnection extends JdbcConnection {
 
     /**
      * @return the log sequence number of the most recent transaction
-     *         that isn't further than {@code maxOffset} from {@code lastLsn}.
+     *         that isn't further than {@code maxOffset} from the beginning.
      */
-    public Lsn getNthTransactionLsn(Lsn lastLsn, int maxOffset, String databaseName) throws SQLException {
-        String query = GET_NTH_TRANSACTION_LSN.replace(DATABASE_NAME_PLACEHOLDER, databaseName);
-        String replacement = lastLsn.isAvailable() ? " AND start_lsn >= ?" : "";
-        return prepareQueryAndMap(query.replace(STATEMENTS_PLACEHOLDER, replacement), statement -> {
-            if (lastLsn.isAvailable()) {
-                // The "+1" compensates for the ">=" in the condition above.
-                statement.setInt(1, maxOffset + 1);
-                statement.setBytes(2, lastLsn.getBinary());
-            }
-            else {
-                statement.setInt(1, maxOffset);
-            }
+    public Lsn getNthTransactionLsnFromBeginning(String databaseName, int maxOffset) throws SQLException {
+        return prepareQueryAndMap(GET_NTH_TRANSACTION_LSN_FROM_BEGINNING.replace(DATABASE_NAME_PLACEHOLDER, databaseName), statement -> {
+            statement.setInt(1, maxOffset);
         }, singleResultMapper(rs -> {
             final Lsn ret = Lsn.valueOf(rs.getBytes(1));
-            LOGGER.trace("Nth lsn is {}", ret);
+            LOGGER.trace("Nth lsn from beginning is {}", ret);
+            return ret;
+        }, "Nth LSN query must return exactly one value"));
+    }
+
+    /**
+     * @return the log sequence number of the most recent transaction
+     *         that isn't further than {@code maxOffset} from {@code lastLsn}.
+     */
+    public Lsn getNthTransactionLsnFromLast(String databaseName, Lsn lastLsn, int maxOffset) throws SQLException {
+        return prepareQueryAndMap(GET_NTH_TRANSACTION_LSN_FROM_LAST.replace(DATABASE_NAME_PLACEHOLDER, databaseName), statement -> {
+            statement.setInt(1, maxOffset);
+            statement.setBytes(2, lastLsn.getBinary());
+        }, singleResultMapper(rs -> {
+            final Lsn ret = Lsn.valueOf(rs.getBytes(1));
+            LOGGER.trace("Nth lsn from last is {}", ret);
             return ret;
         }, "Nth LSN query must return exactly one value"));
     }
@@ -178,8 +181,7 @@ public class SqlServerConnection extends JdbcConnection {
      * @return the log sequence number of the most recent transaction.
      */
     public Lsn getMaxTransactionLsn(String databaseName) throws SQLException {
-        String query = GET_MAX_TRANSACTION_LSN.replace(DATABASE_NAME_PLACEHOLDER, databaseName);
-        return queryAndMap(query, singleResultMapper(rs -> {
+        return queryAndMap(GET_MAX_TRANSACTION_LSN.replace(DATABASE_NAME_PLACEHOLDER, databaseName), singleResultMapper(rs -> {
             final Lsn ret = Lsn.valueOf(rs.getBytes(1));
             LOGGER.trace("Max transaction lsn is {}", ret);
             return ret;
@@ -211,9 +213,7 @@ public class SqlServerConnection extends JdbcConnection {
      * @throws SQLException
      */
     public void getChangesForTable(TableId tableId, Lsn fromLsn, Lsn toLsn, ResultSetConsumer consumer, String databaseName) throws SQLException {
-        final String query = GET_ALL_CHANGES_FOR_TABLE
-                .replaceFirst(STATEMENTS_PLACEHOLDER,
-                        Matcher.quoteReplacement(sourceTimestampMode.lsnTimestampSelectStatement(databaseName, supportsAtTimeZone)))
+        final String query = getAllChangesForTable
                 .replace(DATABASE_NAME_PLACEHOLDER, databaseName)
                 .replace(STATEMENTS_PLACEHOLDER, cdcNameForTable(tableId));
         prepareQuery(query, statement -> {
@@ -240,15 +240,13 @@ public class SqlServerConnection extends JdbcConnection {
 
         int idx = 0;
         for (SqlServerChangeTable changeTable : changeTables) {
-            final String query = GET_ALL_CHANGES_FOR_TABLE
-                    .replaceFirst(STATEMENTS_PLACEHOLDER,
-                            Matcher.quoteReplacement(sourceTimestampMode.lsnTimestampSelectStatement(databaseName, supportsAtTimeZone)))
+            final String query = getAllChangesForTable
                     .replace(DATABASE_NAME_PLACEHOLDER, databaseName)
                     .replace(STATEMENTS_PLACEHOLDER, changeTable.getCaptureInstance());
             queries[idx] = query;
             // If the table was added in the middle of queried buffer we need
             // to adjust from to the first LSN available
-            final Lsn fromLsn = getFromLsn(changeTable, intervalFromLsn, databaseName);
+            final Lsn fromLsn = getFromLsn(databaseName, changeTable, intervalFromLsn);
             LOGGER.trace("Getting changes for table {} in range[{}, {}]", changeTable, fromLsn, intervalToLsn);
             preparers[idx] = statement -> {
                 if (queryFetchSize > 0) {
@@ -263,7 +261,7 @@ public class SqlServerConnection extends JdbcConnection {
         prepareQuery(queries, preparers, consumer);
     }
 
-    private Lsn getFromLsn(SqlServerChangeTable changeTable, Lsn intervalFromLsn, String databaseName) throws SQLException {
+    private Lsn getFromLsn(String databaseName, SqlServerChangeTable changeTable, Lsn intervalFromLsn) throws SQLException {
         Lsn fromLsn = changeTable.getStartLsn().compareTo(intervalFromLsn) > 0 ? changeTable.getStartLsn() : intervalFromLsn;
         return fromLsn.getBinary() != null ? fromLsn : getMinLsn(databaseName, changeTable.getCaptureInstance());
     }
@@ -275,7 +273,7 @@ public class SqlServerConnection extends JdbcConnection {
      * @return LSN of the next position in the database
      * @throws SQLException
      */
-    public Lsn incrementLsn(Lsn lsn, String databaseName) throws SQLException {
+    public Lsn incrementLsn(String databaseName, Lsn lsn) throws SQLException {
         return prepareQueryAndMap(INCREMENT_LSN.replace(DATABASE_NAME_PLACEHOLDER, databaseName), statement -> {
             statement.setBytes(1, lsn.getBinary());
         }, singleResultMapper(rs -> {
@@ -455,7 +453,7 @@ public class SqlServerConnection extends JdbcConnection {
         return captureName + "_CT";
     }
 
-    private ZoneId retrieveTransactionTimezone() {
+    private ZoneId retrieveTransactionTimezone(boolean supportsAtTimeZone) {
         final String serverTimezoneConfig = config().getString(SERVER_TIMEZONE_PROP_NAME);
 
         if (supportsAtTimeZone) {
@@ -556,5 +554,31 @@ public class SqlServerConnection extends JdbcConnection {
         else {
             return super.getColumnValue(rs, columnIndex, column, table, schema);
         }
+    }
+
+    @Override
+    public String buildSelectWithRowLimits(TableId tableId, int limit, String projection, Optional<String> condition,
+                                           String orderBy) {
+        final StringBuilder sql = new StringBuilder("SELECT TOP ");
+        sql
+                .append(limit)
+                .append(' ')
+                .append(projection)
+                .append(" FROM ");
+        sql.append(quotedTableIdString(tableId));
+        if (condition.isPresent()) {
+            sql
+                    .append(" WHERE ")
+                    .append(condition.get());
+        }
+        sql
+                .append(" ORDER BY ")
+                .append(orderBy);
+        return sql.toString();
+    }
+
+    @Override
+    public String quotedTableIdString(TableId tableId) {
+        return "[" + tableId.catalog() + "].[" + tableId.schema() + "].[" + tableId.table() + "]";
     }
 }
