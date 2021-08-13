@@ -90,7 +90,7 @@ public class SqlServerConnection extends JdbcConnection {
     /**
      * actual name of the database, which could differ in casing from the database name given in the connector config.
      */
-    private final String realDatabaseName;
+    private final String databaseName;
     private final ZoneId transactionTimezone;
     private final String getAllChangesForTable;
     private final int queryFetchSize;
@@ -109,6 +109,11 @@ public class SqlServerConnection extends JdbcConnection {
         this(config, clock, sourceTimestampMode, valueConverters, null, Collections.<Envelope.Operation> emptySet());
     }
 
+    public SqlServerConnection(Configuration config, Clock clock, SourceTimestampMode sourceTimestampMode, SqlServerValueConverters valueConverters,
+                               Supplier<ClassLoader> classLoaderSupplier, Set<Envelope.Operation> skippedOperations) {
+        this(config, clock, sourceTimestampMode, valueConverters, classLoaderSupplier, skippedOperations, null);
+    }
+
     /**
      * Creates a new connection using the supplied configuration.
      *
@@ -120,9 +125,9 @@ public class SqlServerConnection extends JdbcConnection {
      * @param skippedOperations a set of {@link Envelope.Operation} to skip in streaming
      */
     public SqlServerConnection(Configuration config, Clock clock, SourceTimestampMode sourceTimestampMode, SqlServerValueConverters valueConverters,
-                               Supplier<ClassLoader> classLoaderSupplier, Set<Envelope.Operation> skippedOperations) {
-        super(config, FACTORY, classLoaderSupplier);
-        realDatabaseName = retrieveRealDatabaseName();
+                               Supplier<ClassLoader> classLoaderSupplier, Set<Envelope.Operation> skippedOperations, Boolean autoCommit) {
+        super(config, FACTORY, classLoaderSupplier, autoCommit);
+        databaseName = config.getString(JdbcConfiguration.DATABASE);
         boolean supportsAtTimeZone = supportsAtTimeZone();
         transactionTimezone = retrieveTransactionTimezone(supportsAtTimeZone);
         defaultValueConverter = new SqlServerDefaultValueConverter(this::connection, valueConverters);
@@ -369,7 +374,7 @@ public class SqlServerConnection extends JdbcConnection {
             while (rs.next()) {
                 changeTables.add(
                         new SqlServerChangeTable(
-                                new TableId(realDatabaseName, rs.getString(1), rs.getString(2)),
+                                new TableId(databaseName, rs.getString(1), rs.getString(2)),
                                 rs.getString(3),
                                 rs.getInt(4),
                                 Lsn.valueOf(rs.getBytes(6)),
@@ -407,7 +412,7 @@ public class SqlServerConnection extends JdbcConnection {
 
         List<Column> columns = new ArrayList<>();
         try (ResultSet rs = metadata.getColumns(
-                realDatabaseName,
+                databaseName,
                 changeTable.getSourceTableId().schema(),
                 changeTable.getSourceTableId().table(),
                 null)) {
@@ -437,7 +442,7 @@ public class SqlServerConnection extends JdbcConnection {
         final TableId changeTableId = changeTable.getChangeTableId();
 
         List<ColumnEditor> columnEditors = new ArrayList<>();
-        try (ResultSet rs = metadata.getColumns(realDatabaseName, changeTableId.schema(), changeTableId.table(), null)) {
+        try (ResultSet rs = metadata.getColumns(databaseName, changeTableId.schema(), changeTableId.table(), null)) {
             while (rs.next()) {
                 readTableColumn(rs, changeTableId, null).ifPresent(columnEditors::add);
             }
@@ -466,8 +471,8 @@ public class SqlServerConnection extends JdbcConnection {
         return captureName + "_CT";
     }
 
-    public String getRealDatabaseName() {
-        return realDatabaseName;
+    public String getDatabaseName() {
+        return databaseName;
     }
 
     private ZoneId retrieveTransactionTimezone(boolean supportsAtTimeZone) {
@@ -492,15 +497,10 @@ public class SqlServerConnection extends JdbcConnection {
         return serverTimezoneConfig == null ? ZoneId.of("UTC") : ZoneId.of(serverTimezoneConfig, ZoneId.SHORT_IDS);
     }
 
-    private String retrieveRealDatabaseName() {
-        try {
-            return queryAndMap(
-                    GET_DATABASE_NAME,
-                    singleResultMapper(rs -> rs.getString(1), "Could not retrieve database name"));
-        }
-        catch (SQLException e) {
-            throw new RuntimeException("Couldn't obtain database name", e);
-        }
+    public String retrieveRealDatabaseName() throws SQLException {
+        return queryAndMap(
+                GET_DATABASE_NAME,
+                singleResultMapper(rs -> rs.getString(1), "Could not retrieve database name"));
     }
 
     /**
