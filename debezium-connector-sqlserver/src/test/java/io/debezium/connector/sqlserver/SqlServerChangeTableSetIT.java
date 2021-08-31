@@ -186,38 +186,45 @@ public class SqlServerChangeTableSetIT extends AbstractConnectorTest {
 
     @Test
     public void addColumnToTableEndOfBatchWithoutLsnLimit() throws Exception {
-        addColumnToTable(true, false);
+        final Configuration config = TestHelper.defaultMultiDatabaseConfig()
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
+                .build();
+        addColumnToTable(config, true);
     }
 
     @Test
     public void addColumnToTableEndOfBatchWithLsnLimit() throws Exception {
-        addColumnToTable(true, true);
+        final Configuration config = TestHelper.defaultMultiDatabaseConfig()
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
+                .with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1)
+                .build();
+        addColumnToTable(config, true);
     }
 
     @Test
     public void addColumnToTableMiddleOfBatchWithoutLsnLimit() throws Exception {
-        addColumnToTable(false, false);
+        final Configuration config = TestHelper.defaultMultiDatabaseConfig()
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
+                .build();
+        addColumnToTable(config, false);
     }
 
     @Test
     public void addColumnToTableMiddleOfBatchWithLsnLimit() throws Exception {
-        addColumnToTable(false, true);
+        final Configuration config = TestHelper.defaultMultiDatabaseConfig()
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
+                .with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1)
+                .build();
+        addColumnToTable(config, true);
     }
 
-    private void addColumnToTable(boolean pauseAfterCaptureChange, boolean limitTransactionsPerIteration) throws Exception {
+    private void addColumnToTable(Configuration config, boolean pauseAfterCaptureChange) throws Exception {
         final int RECORDS_PER_TABLE = 5;
         final int TABLES = 2;
         final int ID_START_1 = 10;
         final int ID_START_2 = 100;
         final int ID_START_3 = 1000;
         final int ID_START_4 = 10000;
-
-        final Configuration.Builder builder = TestHelper.defaultMultiDatabaseConfig()
-                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY);
-        if (limitTransactionsPerIteration){
-            builder.with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1);
-        }
-        final Configuration config = builder.build();
 
         start(SqlServerConnector.class, config);
         assertConnectorIsRunning();

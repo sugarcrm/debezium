@@ -359,22 +359,12 @@ public class SqlServerConnection extends JdbcConnection {
     }
 
     public Set<SqlServerChangeTable> listOfChangeTables(String databaseName) throws SQLException {
-        Map<Integer, List<String>> columns = queryAndMap(
-                GET_LIST_OF_CDC_ENABLED_COLUMNS.replace(DATABASE_NAME_PLACEHOLDER, databaseName),
-                rs -> {
-                    Map<Integer, List<String>> result = new HashMap<>();
-                    while (rs.next()) {
-                        int changeTableObjectId = rs.getInt(1);
-                        if (!result.containsKey(changeTableObjectId)) {
-                            result.put(changeTableObjectId, new LinkedList<>());
-                        }
+        return listOfChangeTables(databaseName, Lsn.NULL, Lsn.NULL);
+    }
 
-                        result.get(changeTableObjectId).add(rs.getString(3));
-                    }
-                    return result;
-                });
-
-        return queryAndMap(GET_LIST_OF_CDC_ENABLED_TABLES.replace(DATABASE_NAME_PLACEHOLDER, databaseName), rs -> {
+    public Set<SqlServerChangeTable> listOfChangeTables(String databaseName, Lsn fromLsn, Lsn toLsn) throws SQLException {
+        final Map<Integer, List<String>> columns = listOfChangeColumns(databaseName);
+        final ResultSetMapper<Set<SqlServerChangeTable>> mapper = rs -> {
             final Set<SqlServerChangeTable> changeTables = new HashSet<>();
             while (rs.next()) {
                 int changeTableObjectId = rs.getInt(4);
@@ -388,6 +378,44 @@ public class SqlServerConnection extends JdbcConnection {
                                 columns.get(changeTableObjectId)));
             }
             return changeTables;
+        };
+
+        String query = GET_LIST_OF_CDC_ENABLED_TABLES.replace(DATABASE_NAME_PLACEHOLDER, databaseName);
+        if (fromLsn.getBinary() == null && toLsn.getBinary() == null) {
+            return queryAndMap(query, mapper);
+        }
+
+        if (fromLsn.getBinary() == null) {
+            return prepareQueryAndMap(query + " WHERE ct.start_lsn <= ?",
+                    ps -> ps.setBytes(1, toLsn.getBinary()),
+                    mapper);
+        }
+
+        if (toLsn.getBinary() == null) {
+            return prepareQueryAndMap(query + " WHERE ct.end_lsn >= ? OR ct.end_lsn IS NULL",
+                    ps -> ps.setBytes(1, fromLsn.getBinary()),
+                    mapper);
+        }
+
+        return prepareQueryAndMap(query + " WHERE ct.start_lsn <= ? AND (ct.end_lsn >= ? OR ct.end_lsn IS NULL)", ps -> {
+            ps.setBytes(1, toLsn.getBinary());
+            ps.setBytes(2, fromLsn.getBinary());
+        }, mapper);
+    }
+
+    private Map<Integer, List<String>> listOfChangeColumns(String databaseName) throws SQLException {
+        final String cdcColumnsQuery = GET_LIST_OF_CDC_ENABLED_COLUMNS.replace(DATABASE_NAME_PLACEHOLDER, databaseName);
+        return queryAndMap(cdcColumnsQuery, rs -> {
+            Map<Integer, List<String>> result = new HashMap<>();
+            while (rs.next()) {
+                int changeTableObjectId = rs.getInt(1);
+                if (!result.containsKey(changeTableObjectId)) {
+                    result.put(changeTableObjectId, new LinkedList<>());
+                }
+
+                result.get(changeTableObjectId).add(rs.getString(3));
+            }
+            return result;
         });
     }
 
