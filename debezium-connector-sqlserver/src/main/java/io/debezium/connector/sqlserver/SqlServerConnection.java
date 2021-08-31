@@ -365,6 +365,10 @@ public class SqlServerConnection extends JdbcConnection {
     }
 
     public Set<SqlServerChangeTable> listOfChangeTables(String databaseName) throws SQLException {
+        return listOfChangeTables(databaseName, Lsn.NULL, Lsn.NULL);
+    }
+
+    public Set<SqlServerChangeTable> listOfChangeTables(String databaseName, Lsn fromLsn, Lsn toLsn) throws SQLException {
         Map<Integer, List<String>> columns = queryAndMap(
                 replaceDatabaseNamePlaceholder(GET_LIST_OF_CDC_ENABLED_COLUMNS, databaseName),
                 rs -> {
@@ -380,7 +384,7 @@ public class SqlServerConnection extends JdbcConnection {
                     return result;
                 });
 
-        return queryAndMap(replaceDatabaseNamePlaceholder(GET_LIST_OF_CDC_ENABLED_TABLES, databaseName), rs -> {
+        final ResultSetMapper<Set<SqlServerChangeTable>> mapper = rs -> {
             final Set<SqlServerChangeTable> changeTables = new HashSet<>();
             while (rs.next()) {
                 int changeTableObjectId = rs.getInt(4);
@@ -393,7 +397,17 @@ public class SqlServerConnection extends JdbcConnection {
                                 columns.get(changeTableObjectId)));
             }
             return changeTables;
-        });
+        };
+
+        String query = replaceDatabaseNamePlaceholder(GET_LIST_OF_CDC_ENABLED_TABLES, databaseName);
+
+        if (toLsn.isAvailable()) {
+            return prepareQueryAndMap(query + " WHERE ct.start_lsn <= ?",
+                    ps -> ps.setBytes(1, toLsn.getBinary()),
+                    mapper);
+        }
+
+        return queryAndMap(query, mapper);
     }
 
     public Set<SqlServerChangeTable> listOfNewChangeTables(String databaseName, Lsn fromLsn, Lsn toLsn) throws SQLException {
