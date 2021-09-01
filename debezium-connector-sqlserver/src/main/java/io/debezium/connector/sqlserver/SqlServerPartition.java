@@ -28,19 +28,25 @@ public class SqlServerPartition implements Partition {
     private final String serverName;
     private final String databaseName;
 
-    public SqlServerPartition(String serverName, String databaseName) {
+    // partition components must be stored in a linked map because they are used for building JMX bean names
+    private final Map<String, String> sourcePartition = new LinkedHashMap<>();
+    private final int hashCode;
+
+    public SqlServerPartition(String serverName, String databaseName, boolean multiPartitionMode) {
         this.serverName = serverName;
         this.databaseName = databaseName;
+
+        this.sourcePartition.put(SERVER_PARTITION_KEY, serverName);
+        if (multiPartitionMode) {
+            this.sourcePartition.put(DATABASE_PARTITION_KEY, databaseName);
+        }
+
+        this.hashCode = Objects.hash(serverName, databaseName);
     }
 
     @Override
     public Map<String, String> getSourcePartition() {
-        // partition components must be stored in a linked map because they are used to build JMX bean names
-        Map<String, String> partition = new LinkedHashMap<>();
-        partition.put(SERVER_PARTITION_KEY, serverName);
-        partition.put(DATABASE_PARTITION_KEY, databaseName);
-
-        return partition;
+        return sourcePartition;
     }
 
     @Override
@@ -72,7 +78,7 @@ public class SqlServerPartition implements Partition {
 
     @Override
     public int hashCode() {
-        return Objects.hash(serverName, databaseName);
+        return hashCode;
     }
 
     static class Provider implements Partition.Provider<SqlServerPartition> {
@@ -89,6 +95,7 @@ public class SqlServerPartition implements Partition {
         @Override
         public Set<SqlServerPartition> getPartitions() {
             String serverName = connectorConfig.getLogicalName();
+            boolean multiPartitionMode = connectorConfig.isMultiPartitionModeEnabled();
 
             String[] databaseNames = taskConfig.getString(TASK_DATABASE_NAMES.name()).split(",");
 
@@ -103,7 +110,7 @@ public class SqlServerPartition implements Partition {
                         }
                     })
                     .filter(realDatabaseName -> !realDatabaseName.isEmpty())
-                    .map(realDatabaseName -> new SqlServerPartition(serverName, realDatabaseName))
+                    .map(realDatabaseName -> new SqlServerPartition(serverName, realDatabaseName, multiPartitionMode))
                     .collect(Collectors.toSet());
         }
     }

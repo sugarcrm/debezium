@@ -8,6 +8,7 @@ package io.debezium.connector.sqlserver;
 import static io.debezium.config.CommonConnectorConfig.TASK_ID;
 import static io.debezium.connector.sqlserver.SqlServerConnectorConfig.DATABASE_NAMES;
 import static io.debezium.connector.sqlserver.SqlServerConnectorConfig.TASK_DATABASE_NAMES;
+import static io.debezium.relational.RelationalDatabaseConnectorConfig.DATABASE_NAME;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,12 +26,13 @@ import org.slf4j.LoggerFactory;
 import io.debezium.config.Configuration;
 import io.debezium.connector.common.RelationalBaseSourceConnector;
 import io.debezium.relational.RelationalDatabaseConnectorConfig;
-import io.debezium.util.Clock;
+import io.debezium.util.Strings;
 
 /**
  * The main connector class used to instantiate configuration and execution classes
  *
  * @author Jiri Pechanec
+ *
  */
 public class SqlServerConnector extends RelationalBaseSourceConnector {
 
@@ -62,43 +64,42 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
 
             return Collections.singletonList(properties);
         }
-        else {
-            List<String> dbNames;
-            try {
-                // Parse the database names property
-                dbNames = Arrays.asList(properties.get(DATABASE_NAMES.name()).split(","));
-                if (dbNames.isEmpty()) {
-                    throw new IllegalArgumentException();
-                }
-            }
-            catch (Exception ex) {
-                throw new IllegalArgumentException("Failed to parse the property: " + DATABASE_NAMES);
-            }
 
-            // Initialize the database list for each task
-            List<List<String>> taskDatabases = new ArrayList<>();
-            for (int i = 0; i < maxTasks; i++) {
-                taskDatabases.add(new ArrayList<>());
+        List<String> dbNames;
+        try {
+            // Parse the database names property
+            dbNames = Arrays.asList(properties.get(DATABASE_NAMES.name()).split(","));
+            if (dbNames.isEmpty()) {
+                throw new IllegalArgumentException();
             }
-
-            // Add each database to a task list via round robin.
-            for (int dbNamesIndex = 0; dbNamesIndex < dbNames.size(); dbNamesIndex++) {
-                int taskIndex = dbNamesIndex % maxTasks;
-                taskDatabases.get(taskIndex).add(dbNames.get(dbNamesIndex));
-            }
-
-            // Create a task config for each task, assigning each a list of database names.
-            List<Map<String, String>> taskConfigs = new ArrayList<>();
-            for (int taskIndex = 0; taskIndex < maxTasks; taskIndex++) {
-                String databases = String.join(",", taskDatabases.get(taskIndex));
-                Map<String, String> taskProperties = new HashMap<>(properties);
-                taskProperties.put(TASK_DATABASE_NAMES.name(), databases);
-                taskProperties.put(TASK_ID, String.valueOf(taskIndex));
-                taskConfigs.add(Collections.unmodifiableMap(taskProperties));
-            }
-
-            return taskConfigs;
         }
+        catch (Exception ex) {
+            throw new IllegalArgumentException("Failed to parse the property: " + DATABASE_NAMES);
+        }
+
+        // Initialize the database list for each task
+        List<List<String>> taskDatabases = new ArrayList<>();
+        for (int i = 0; i < maxTasks; i++) {
+            taskDatabases.add(new ArrayList<>());
+        }
+
+        // Add each database to a task list via round-robin.
+        for (int dbNamesIndex = 0; dbNamesIndex < dbNames.size(); dbNamesIndex++) {
+            int taskIndex = dbNamesIndex % maxTasks;
+            taskDatabases.get(taskIndex).add(dbNames.get(dbNamesIndex));
+        }
+
+        // Create a task config for each task, assigning each a list of database names.
+        List<Map<String, String>> taskConfigs = new ArrayList<>();
+        for (int taskIndex = 0; taskIndex < maxTasks; taskIndex++) {
+            String databases = String.join(",", taskDatabases.get(taskIndex));
+            Map<String, String> taskProperties = new HashMap<>(properties);
+            taskProperties.put(TASK_DATABASE_NAMES.name(), databases);
+            taskProperties.put(TASK_ID, String.valueOf(taskIndex));
+            taskConfigs.add(Collections.unmodifiableMap(taskProperties));
+        }
+
+        return taskConfigs;
     }
 
     @Override
@@ -112,18 +113,18 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
 
     @Override
     protected void validateConnection(Map<String, ConfigValue> configValues, Configuration config) {
-        final ConfigValue databasesValue = configValues.get(DATABASE_NAMES.name());
-        if (!databasesValue.errorMessages().isEmpty()) {
-            return;
+        final SqlServerConnectorConfig sqlServerConfig = new SqlServerConnectorConfig(config);
+
+        if (Strings.isNullOrEmpty(sqlServerConfig.getDatabaseName())) {
+            throw new IllegalArgumentException("Either '" + DATABASE_NAME + "' or '" + DATABASE_NAMES
+                    + "' option must be specified");
         }
 
         final ConfigValue hostnameValue = configValues.get(RelationalDatabaseConnectorConfig.HOSTNAME.name());
         final ConfigValue userValue = configValues.get(RelationalDatabaseConnectorConfig.USER.name());
-        SqlServerConnectorConfig sqlServerConfig = new SqlServerConnectorConfig(config);
         // Try to connect to the database ...
-        try (SqlServerConnection connection = new SqlServerConnection(sqlServerConfig.jdbcConfig(), Clock.system(),
-                sqlServerConfig.getSourceTimestampMode(), null)) {
-            connection.test();
+        try (SqlServerConnection connection = connect(sqlServerConfig)) {
+            connection.execute("SELECT @@VERSION");
             LOGGER.debug("Successfully tested connection for {} with user '{}'", connection.connectionString(),
                     connection.username());
         }
@@ -138,5 +139,11 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
     @Override
     protected Map<String, ConfigValue> validateAllFields(Configuration config) {
         return config.validate(SqlServerConnectorConfig.ALL_FIELDS);
+    }
+
+    private SqlServerConnection connect(SqlServerConnectorConfig sqlServerConfig) {
+        return new SqlServerConnection(sqlServerConfig.jdbcConfig(),
+                sqlServerConfig.getSourceTimestampMode(), null,
+                sqlServerConfig.isMultiPartitionModeEnabled());
     }
 }

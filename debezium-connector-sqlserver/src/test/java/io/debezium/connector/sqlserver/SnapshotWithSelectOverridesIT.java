@@ -9,7 +9,6 @@ import static org.fest.assertions.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.kafka.connect.data.Struct;
@@ -96,34 +95,48 @@ public class SnapshotWithSelectOverridesIT extends AbstractConnectorTest {
 
     @Test
     @FixFor("DBZ-1224")
-    public void takeSnapshotWithOverrides() throws Exception {
-        final List<String> overrides = new ArrayList<>();
-        TestHelper.forEachDatabase(databaseName -> overrides.add(String.format("%1$s.dbo.table1,%1$s.dbo.table3", databaseName)));
-        final Configuration.ConfigBuilder builder = TestHelper.defaultMultiDatabaseConfig()
+    public void takeSnapshotWithOverridesInSinglePartitionMode() throws Exception {
+        final Configuration config = TestHelper.defaultConfig()
                 .with(
                         RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
-                        String.join(",", overrides));
-        TestHelper.forEachDatabase(databaseName -> builder
+                        "dbo.table1,dbo.table3")
                 .with(
-                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE
-                                + String.format(".%s.dbo.table1", databaseName),
-                        String.format("SELECT * FROM [%s].[dbo].[table1] where soft_deleted = 0 order by id desc", databaseName))
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table1",
+                        "SELECT * FROM [dbo].[table1] where soft_deleted = 0 order by id desc")
                 .with(
-                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE
-                                + String.format(".%s.dbo.table3", databaseName),
-                        String.format("SELECT * FROM [%s].[dbo].[table3] where soft_deleted = 0", databaseName))
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table3",
+                        "SELECT * FROM [dbo].[table3] where soft_deleted = 0")
+                .build();
+        takeSnapshotWithOverrides(config);
+    }
 
-        );
+    @Test
+    @FixFor({ "DBZ-1224", "DBZ-2975" })
+    public void takeSnapshotWithOverridesInMultiPartitionMode() throws Exception {
+        final Configuration config = TestHelper.defaultMultiPartitionConfig()
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
+                        "dbo.table1,dbo.table3")
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table1",
+                        "SELECT * FROM [" + TestHelper.TEST_REAL_DATABASE1 + "].[dbo].[table1] where soft_deleted = 0 order by id desc")
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table3",
+                        "SELECT * FROM [" + TestHelper.TEST_REAL_DATABASE1 + "].[dbo].[table3] where soft_deleted = 0")
+                .build();
+        takeSnapshotWithOverrides(config);
+    }
 
-        start(SqlServerConnector.class, builder.build());
+    private void takeSnapshotWithOverrides(Configuration config) throws Exception {
+        start(SqlServerConnector.class, config);
         assertConnectorIsRunning();
 
         int numRecords = (INITIAL_RECORDS_PER_TABLE + (INITIAL_RECORDS_PER_TABLE + INITIAL_RECORDS_PER_TABLE) / 2) * TestHelper.TEST_DATABASES.size();
         SourceRecords records = consumeRecordsByTopic(numRecords);
         TestHelper.forEachDatabase(databaseName -> {
-            List<SourceRecord> table1 = records.recordsForTopic(TestHelper.topicName(databaseName, "table1"));
-            List<SourceRecord> table2 = records.recordsForTopic(TestHelper.topicName(databaseName, "table2"));
-            List<SourceRecord> table3 = records.recordsForTopic(TestHelper.topicName(databaseName, "table3"));
+            List<SourceRecord> table1 = records.recordsForTopic(TestHelper.topicName(TestHelper.TEST_REAL_DATABASE1, "table1"));
+            List<SourceRecord> table2 = records.recordsForTopic(TestHelper.topicName(TestHelper.TEST_REAL_DATABASE1, "table2"));
+            List<SourceRecord> table3 = records.recordsForTopic(TestHelper.topicName(TestHelper.TEST_REAL_DATABASE1, "table3"));
 
             // soft_deleted records should be excluded for table1 and table3
             assertThat(table1).hasSize(INITIAL_RECORDS_PER_TABLE / 2);
@@ -151,20 +164,40 @@ public class SnapshotWithSelectOverridesIT extends AbstractConnectorTest {
 
     @Test
     @FixFor("DBZ-3429")
-    public void takeSnapshotWithOverridesWithAdditionalWhitespace() throws Exception {
-        final String databaseName = TestHelper.TEST_REAL_DATABASE1;
+    public void takeSnapshotWithOverridesWithAdditionalWhitespaceInSinglePartitionMode() throws Exception {
         final Configuration config = TestHelper.defaultConfig()
                 .with(
                         RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
-                        "  " + databaseName + ".dbo.table1 , " + databaseName + ".dbo.table3  ")
+                        "  dbo.table1 , dbo.table3  ")
                 .with(
-                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + "." + databaseName + ".dbo.table1",
-                        "SELECT * FROM " + databaseName + ".[dbo].[table1] where soft_deleted = 0 order by id desc")
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table1",
+                        "SELECT * FROM [dbo].[table1] where soft_deleted = 0 order by id desc")
                 .with(
-                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + "." + databaseName + ".dbo.table3",
-                        "SELECT * FROM " + databaseName + ".[dbo].[table3] where soft_deleted = 0")
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table3",
+                        "SELECT * FROM [dbo].[table3] where soft_deleted = 0")
                 .build();
+        takeSnapshotWithOverridesWithAdditionalWhitespace(config);
+    }
 
+    @Test
+    @FixFor({ "DBZ-3429", "DBZ-2975" })
+    public void takeSnapshotWithOverridesWithAdditionalWhitespaceInMultiPartitionMode() throws Exception {
+        final Configuration config = TestHelper.defaultMultiPartitionConfig()
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE,
+                        "  dbo.table1 , dbo.table3  ")
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table1",
+                        "SELECT * FROM [" + TestHelper.TEST_REAL_DATABASE1 + "].[dbo].[table1] where soft_deleted = 0 order by id desc")
+                .with(
+                        RelationalDatabaseConnectorConfig.SNAPSHOT_SELECT_STATEMENT_OVERRIDES_BY_TABLE + ".dbo.table3",
+                        "SELECT * FROM [" + TestHelper.TEST_REAL_DATABASE1 + "].[dbo].[table3] where soft_deleted = 0")
+                .build();
+        takeSnapshotWithOverridesWithAdditionalWhitespace(config);
+    }
+
+    private void takeSnapshotWithOverridesWithAdditionalWhitespace(Configuration config) throws Exception {
+        final String databaseName = TestHelper.TEST_REAL_DATABASE1;
         start(SqlServerConnector.class, config);
         assertConnectorIsRunning();
 

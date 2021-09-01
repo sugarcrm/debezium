@@ -8,7 +8,7 @@ package io.debezium.connector.sqlserver;
 import static org.fest.assertions.Assertions.assertThat;
 
 import java.sql.SQLException;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +28,7 @@ import io.debezium.connector.sqlserver.util.TestHelper;
 import io.debezium.doc.FixFor;
 import io.debezium.embedded.AbstractConnectorTest;
 import io.debezium.relational.RelationalDatabaseConnectorConfig;
+import io.debezium.util.Collect;
 import io.debezium.util.Testing;
 
 /**
@@ -326,14 +327,28 @@ public class SchemaHistoryTopicIT extends AbstractConnectorTest {
 
     @Test
     @FixFor("DBZ-3347")
-    public void shouldContainPartitionInSchemaChangeEvent() throws Exception {
+    public void shouldContainPartitionInSchemaChangeEventInSinglePartitionMode() throws Exception {
+        shouldContainPartitionInSchemaChangeEvent(TestHelper.defaultConfig(),
+                Collections.singletonMap("server", "server1"));
+    }
+
+    @Test
+    @FixFor({ "DBZ-3347", "DBZ-2975" })
+    public void shouldContainPartitionInSchemaChangeEventInMultiPartitionMode() throws Exception {
+        shouldContainPartitionInSchemaChangeEvent(TestHelper.defaultMultiPartitionConfig(),
+                Collect.hashMapOf("server", "server1", "database", "testDB"));
+    }
+
+    private void shouldContainPartitionInSchemaChangeEvent(Configuration.Builder configBuilder,
+                                                           Map<String, String> expectedPartition)
+            throws Exception {
         String databaseName = TestHelper.TEST_REAL_DATABASE1;
         connection.execute("USE " + databaseName);
 
         connection.execute("create table dbz3347 (id int primary key, data varchar(50))");
         TestHelper.enableTableCdc(connection, databaseName, "dbz3347");
 
-        Configuration config = TestHelper.defaultConfig()
+        Configuration config = configBuilder
                 .with(SqlServerConnectorConfig.TABLE_INCLUDE_LIST, "dbo\\.dbz3347")
                 .with(SqlServerConnectorConfig.INCLUDE_SCHEMA_CHANGES, true)
                 .build();
@@ -345,10 +360,6 @@ public class SchemaHistoryTopicIT extends AbstractConnectorTest {
 
         SourceRecords schemaChanges = consumeRecordsByTopic(1);
         SourceRecord change = schemaChanges.recordsForTopic("server1").get(0);
-
-        Map<String, String> expectedPartition = new HashMap<>();
-        expectedPartition.put("server", "server1");
-        expectedPartition.put("database", "testDB1");
 
         assertThat(change.sourcePartition()).isEqualTo(expectedPartition);
     }

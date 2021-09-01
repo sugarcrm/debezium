@@ -47,7 +47,6 @@ import io.debezium.jdbc.JdbcValueConverters;
 import io.debezium.jdbc.TemporalPrecisionMode;
 import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.history.FileDatabaseHistory;
-import io.debezium.util.Clock;
 import io.debezium.util.IoUtil;
 import io.debezium.util.Strings;
 import io.debezium.util.Testing;
@@ -110,7 +109,7 @@ public class TestHelper {
     }
 
     public static JdbcConfiguration adminJdbcConfig() {
-        return JdbcConfiguration.copy(Configuration.fromSystemProperties("database."))
+        return JdbcConfiguration.copy(Configuration.fromSystemProperties(SqlServerConnectorConfig.DATABASE_CONFIG_PREFIX))
                 .withDefault(JdbcConfiguration.HOSTNAME, "localhost")
                 .withDefault(JdbcConfiguration.PORT, 1433)
                 .withDefault(JdbcConfiguration.USER, "sa")
@@ -119,7 +118,7 @@ public class TestHelper {
     }
 
     public static JdbcConfiguration defaultJdbcConfig() {
-        return JdbcConfiguration.copy(Configuration.fromSystemProperties("database."))
+        return JdbcConfiguration.copy(Configuration.fromSystemProperties(SqlServerConnectorConfig.DATABASE_CONFIG_PREFIX))
                 .withDefault(JdbcConfiguration.HOSTNAME, "localhost")
                 .withDefault(JdbcConfiguration.PORT, 1433)
                 .withDefault(JdbcConfiguration.USER, "sa")
@@ -146,11 +145,7 @@ public class TestHelper {
         TEST_DATABASES.values().forEach(callback);
     }
 
-    /**
-     * Returns a default configuration suitable for most test cases. Can be amended/overridden in individual tests as
-     * needed.
-     */
-    public static Configuration.Builder defaultConfig() {
+    public static Configuration.Builder defaultConnectorConfig() {
         return defaultSingleDatabaseConfig();
     }
 
@@ -177,6 +172,23 @@ public class TestHelper {
                 .with(SqlServerConnectorConfig.DATABASE_HISTORY, FileDatabaseHistory.class)
                 .with(FileDatabaseHistory.FILE_PATH, DB_HISTORY_PATH)
                 .with(RelationalDatabaseConnectorConfig.INCLUDE_SCHEMA_CHANGES, false);
+    }
+
+    /**
+     * Returns a default connector configuration suitable for most test cases. Can be amended/overridden
+     * in individual tests as needed.
+     */
+    public static Configuration.Builder defaultConfig() {
+        return defaultConnectorConfig()
+                .with(SqlServerConnectorConfig.DATABASE_NAME.name(), TEST_DATABASE1);
+    }
+
+    /**
+     * Returns a default configuration for connectors in multi-partition mode.
+     */
+    public static Configuration.Builder defaultMultiPartitionConfig() {
+        return defaultConnectorConfig()
+                .with(SqlServerConnectorConfig.DATABASE_NAMES.name(), TEST_DATABASE1);
     }
 
     public static void createTestDatabase() {
@@ -285,17 +297,20 @@ public class TestHelper {
         }
     }
 
-    public static SqlServerConnection adminConnection() throws SQLException {
-        return new SqlServerConnection(TestHelper.adminJdbcConfig(), Clock.system(), SourceTimestampMode.getDefaultMode(),
-                new SqlServerValueConverters(JdbcValueConverters.DecimalMode.PRECISE, TemporalPrecisionMode.ADAPTIVE, null));
+    public static SqlServerConnection adminConnection() {
+        return new SqlServerConnection(TestHelper.adminJdbcConfig(), SourceTimestampMode.getDefaultMode(),
+                new SqlServerValueConverters(JdbcValueConverters.DecimalMode.PRECISE, TemporalPrecisionMode.ADAPTIVE, null), true);
     }
 
-    public static SqlServerConnection testConnection() throws SQLException {
-        SqlServerConnection connection = new SqlServerConnection(TestHelper.defaultJdbcConfig(), Clock.system(), SourceTimestampMode.getDefaultMode(),
-                new SqlServerValueConverters(JdbcValueConverters.DecimalMode.PRECISE, TemporalPrecisionMode.ADAPTIVE, null));
-        // TODO: remove once all tests are converted
-        connection.execute("USE " + TEST_DATABASE1);
-        return connection;
+    public static SqlServerConnection testConnection() {
+        Configuration config = defaultJdbcConfig()
+                .edit()
+                // TODO: remove once all tests are converted
+                .with(JdbcConfiguration.ON_CONNECT_STATEMENTS, "USE [" + TEST_DATABASE1 + "]")
+                .build();
+
+        return new SqlServerConnection(config, SourceTimestampMode.getDefaultMode(),
+                new SqlServerValueConverters(JdbcValueConverters.DecimalMode.PRECISE, TemporalPrecisionMode.ADAPTIVE, null), true);
     }
 
     /**

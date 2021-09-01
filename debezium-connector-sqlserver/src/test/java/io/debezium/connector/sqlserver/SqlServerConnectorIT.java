@@ -248,8 +248,12 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
                         "SELECT (SELECT transaction_id FROM sys.dm_tran_session_transactions AS t WHERE s.session_id=t.session_id) FROM sys.dm_exec_sessions AS s WHERE program_name='"
                                 + appId + "'",
                         rs -> {
-                            rs.next();
-                            txIds.add(rs.getLong(1));
+                            while (rs.next()) {
+                                final long txId = rs.getLong(1);
+                                if (txId != 0) {
+                                    txIds.add(txId);
+                                }
+                            }
                         });
                 return txIds.size() > 2;
             });
@@ -952,8 +956,8 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
         final int TABLES = 1;
         final int ID_START = 10;
         final Configuration config = TestHelper.defaultMultiDatabaseConfig()
-                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY)
-                .with(SqlServerConnectorConfig.TABLE_INCLUDE_LIST, "dbo.tableb")
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL)
+                .with(SqlServerConnectorConfig.TABLE_INCLUDE_LIST, "^dbo.tableb$")
                 .build();
 
         TestHelper.forEachDatabase(databaseName -> {
@@ -966,7 +970,8 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
         assertConnectorIsRunning();
 
         // Wait for snapshot completion
-        consumeRecordsByTopic(TestHelper.TEST_DATABASES.size());
+        final SourceRecords snapshotRecords = consumeRecordsByTopic(TestHelper.TEST_DATABASES.size());
+        Assertions.assertThat(snapshotRecords.recordsForTopic("server1.dbo.tableb")).isNotEmpty();
 
         TestHelper.forEachDatabase(databaseName -> {
             connection.execute("USE " + databaseName);
@@ -1340,21 +1345,23 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
 
     @Test
     @FixFor("DBZ-3505")
-    public void shouldFailOnInvalidColumnFilter() throws Exception {
+    public void shouldHandleInvalidColumnFilter() throws Exception {
         final Configuration config = TestHelper.defaultConfig()
                 .with(SqlServerConnectorConfig.COLUMN_INCLUDE_LIST, ".^")
                 .build();
         final LogInterceptor logInterceptor = new LogInterceptor();
 
         start(SqlServerConnector.class, config);
-        waitForConnectorShutdown("sql_server", "server1");
+        assertConnectorIsRunning();
 
-        consumeRecord();
-        Awaitility.await()
-                .alias("Found error message in logs")
-                .atMost(TestHelper.waitTimeForRecords(), TimeUnit.SECONDS)
-                .until(() -> logInterceptor.containsStacktraceElement("Filtered column list for table testDB1.dbo.tablea is empty")
-                        && !engine.isRunning());
+        // Wait for snapshot completion
+        consumeRecordsByTopic(1);
+
+        // should be no more records
+        assertNoRecordsToConsume();
+
+        final String message = "All columns in table testDB1.dbo.tablea were excluded due to include/exclude lists, defaulting to selecting all columns";
+        stopConnector(value -> assertThat(logInterceptor.containsMessage(message)).isTrue());
     }
 
     @Test

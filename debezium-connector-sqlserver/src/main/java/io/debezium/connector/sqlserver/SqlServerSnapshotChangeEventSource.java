@@ -10,7 +10,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Statement;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,7 +42,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     private final SqlServerConnectorConfig connectorConfig;
     private final SqlServerConnection jdbcConnection;
     private final SqlServerDatabaseSchema sqlServerDatabaseSchema;
-    private final Map<SqlServerPartition, Map<TableId, SqlServerChangeTable>> changeTablesByPartition = new HashMap<>();
+    private Map<TableId, SqlServerChangeTable> changeTables;
 
     public SqlServerSnapshotChangeEventSource(SqlServerConnectorConfig connectorConfig, SqlServerConnection jdbcConnection,
                                               SqlServerDatabaseSchema schema, EventDispatcher<TableId> dispatcher, Clock clock,
@@ -139,7 +138,7 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
                     LOGGER.info("Locking table {}", tableId);
 
                     String query = String.format("SELECT TOP(0) * FROM [%s].[%s].[%s] WITH (TABLOCKX)",
-                            snapshotContext.partition.getDatabaseName(), tableId.schema(), tableId.table());
+                            tableId.catalog(), tableId.schema(), tableId.table());
                     statement.executeQuery(query).close();
                 }
             }
@@ -179,8 +178,6 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
         Set<String> schemas = snapshotContext.capturedTables.stream()
                 .map(TableId::schema)
                 .collect(Collectors.toSet());
-
-        Map<TableId, SqlServerChangeTable> changeTables = new HashMap<>();
 
         // reading info only for the schemas we're interested in as per the set of captured tables;
         // while the passed table name filter alone would skip all non-included tables, reading the schema
@@ -222,8 +219,6 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
                 }
             });
         }
-
-        changeTablesByPartition.put(snapshotContext.partition, changeTables);
     }
 
     @Override
@@ -255,53 +250,34 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
     }
 
     /**
-     * Generate a valid sqlserver query string for the specified table
+     * Generate a valid SQL Server query string for the specified table
      *
      * @param tableId the table to generate a query for
      * @return a valid query string
      */
     @Override
     protected Optional<String> getSnapshotSelect(RelationalSnapshotContext<SqlServerPartition, SqlServerOffsetContext> snapshotContext,
-                                                 TableId tableId) {
-        String modifiedColumns = checkExcludedColumns(snapshotContext.partition, tableId);
-        return Optional
-                .of(String.format("SELECT %s FROM [%s].[%s].[%s]", modifiedColumns, snapshotContext.partition.getDatabaseName(), tableId.schema(), tableId.table()));
+                                                 TableId tableId, List<String> columns) {
+        String snapshotSelectColumns = columns.stream()
+                .collect(Collectors.joining(", "));
+        return Optional.of(String.format("SELECT %s FROM [%s].[%s].[%s]", snapshotSelectColumns, tableId.catalog(), tableId.schema(), tableId.table()));
     }
 
     @Override
     protected String enhanceOverriddenSelect(RelationalSnapshotContext<SqlServerPartition, SqlServerOffsetContext> snapshotContext,
                                              String overriddenSelect, TableId tableId) {
-        String modifiedColumns = checkExcludedColumns(snapshotContext.partition, tableId);
-        return overriddenSelect.replaceAll("\\*", modifiedColumns);
+        String snapshotSelectColumns = getPreparedColumnNames(sqlServerDatabaseSchema.tableFor(tableId)).stream()
+                .collect(Collectors.joining(", "));
+        return overriddenSelect.replaceAll(SELECT_ALL_PATTERN.pattern(), snapshotSelectColumns);
     }
 
-    private String checkExcludedColumns(SqlServerPartition partition, TableId tableId) {
-        Table table = sqlServerDatabaseSchema.tableFor(tableId);
-        List<String> columnNames = table.retrieveColumnNames().stream()
-                .filter(columnName -> filterChangeTableColumns(partition, tableId, columnName))
-                .filter(columnName -> connectorConfig.getColumnFilter().matches(tableId.catalog(), tableId.schema(), tableId.table(), columnName))
-                .collect(Collectors.toList());
-
-        if (columnNames.isEmpty()) {
-            throw new IllegalArgumentException("Filtered column list for table " + tableId + " is empty");
-        }
-
-        return columnNames.stream()
-                .map(columnName -> {
-                    StringBuilder sb = new StringBuilder();
-                    if (!columnName.contains(tableId.table())) {
-                        sb.append("[").append(tableId.table()).append("]")
-                                .append(".[").append(columnName).append("]");
-                    }
-                    else {
-                        sb.append("[").append(columnName).append("]");
-                    }
-                    return sb.toString();
-                }).collect(Collectors.joining(","));
+    @Override
+    protected boolean additionalColumnFilter(TableId tableId, String columnName) {
+        return filterChangeTableColumns(tableId, columnName);
     }
 
-    private boolean filterChangeTableColumns(SqlServerPartition partition, TableId tableId, String columnName) {
-        SqlServerChangeTable changeTable = changeTablesByPartition.get(partition).get(tableId);
+    private boolean filterChangeTableColumns(TableId tableId, String columnName) {
+        SqlServerChangeTable changeTable = changeTables.get(tableId);
         if (changeTable != null) {
             return changeTable.getCapturedColumns().contains(columnName);
         }

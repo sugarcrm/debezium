@@ -58,6 +58,8 @@ import io.debezium.util.ElapsedTimeStrategy;
  */
 public class SqlServerStreamingChangeEventSource implements StreamingChangeEventSource<SqlServerPartition, SqlServerOffsetContext> {
 
+    private static final Pattern MISSING_CDC_FUNCTION_CHANGES_ERROR = Pattern.compile("Invalid object name '(.*)\\.cdc.fn_cdc_get_all_changes_(.*)'\\.");
+
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlServerStreamingChangeEventSource.class);
 
     private static final Duration DEFAULT_INTERVAL_BETWEEN_COMMITS = Duration.ofMinutes(1);
@@ -69,8 +71,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
     private final SqlServerConnection dataConnection;
 
     /**
-     * A separate connection for retrieving timestamps; without it, adaptive
-     * buffering will not work.
+     * A separate connection for retrieving details of the schema changes; without it, adaptive buffering will not work.
      *
      * @link https://docs.microsoft.com/en-us/sql/connect/jdbc/using-adaptive-buffering?view=sql-server-2017#guidelines-for-using-adaptive-buffering
      */
@@ -112,6 +113,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
             return new StreamingResult<>(offsetContext);
         }
 
+        final String databaseName = partition.getDatabaseName();
         Queue<SqlServerChangeTable> schemaChangeCheckpoints = new PriorityQueue<>((x, y) -> x.getStopLsn().compareTo(y.getStopLsn()));
         try {
             AtomicReference<SqlServerChangeTable[]> tablesSlot;
@@ -144,7 +146,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
 
             if (context.isRunning()) {
                 commitTransaction();
-                final Lsn toLsn = getToLsn(dataConnection, partition.getDatabaseName(), lastProcessedPosition, maxTransactionsPerIteration);
+                final Lsn toLsn = getToLsn(dataConnection, databaseName, lastProcessedPosition, maxTransactionsPerIteration);
 
                 // Shouldn't happen if the agent is running, but it is better to guard against such situation
                 if (!toLsn.isAvailable()) {
@@ -166,14 +168,14 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                 // Reading interval is inclusive so we need to move LSN forward but not for first
                 // run as TX might not be streamed completely
                 final Lsn fromLsn = lastProcessedPosition.getCommitLsn().isAvailable() && shouldIncreaseFromLsn
-                        ? dataConnection.incrementLsn(partition.getDatabaseName(), lastProcessedPosition.getCommitLsn())
+                        ? dataConnection.incrementLsn(databaseName, lastProcessedPosition.getCommitLsn())
                         : lastProcessedPosition.getCommitLsn();
                 shouldIncreaseFromLsn = true;
 
                 while (!schemaChangeCheckpoints.isEmpty()) {
                     migrateTable(partition, schemaChangeCheckpoints, offsetContext);
                 }
-                if (!dataConnection.listOfNewChangeTables(partition.getDatabaseName(), fromLsn, toLsn).isEmpty()) {
+                if (!dataConnection.listOfNewChangeTables(databaseName, fromLsn, toLsn).isEmpty()) {
                     final SqlServerChangeTable[] tables = getCdcTablesToQuery(partition, offsetContext);
                     tablesSlot.set(tables);
                     for (SqlServerChangeTable table : tables) {
@@ -189,7 +191,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                     TxLogPosition finalLastProcessedPositionOnStart = lastProcessedPositionOnStart;
                     long finalLastProcessedEventSerialNoOnStart = lastProcessedEventSerialNoOnStart;
                     Queue<SqlServerChangeTable> finalSchemaChangeCheckpoints = schemaChangeCheckpoints;
-                    dataConnection.getChangesForTables(partition.getDatabaseName(), tablesSlot.get(), fromLsn, toLsn, resultSets -> {
+                    dataConnection.getChangesForTables(databaseName, tablesSlot.get(), fromLsn, toLsn, resultSets -> {
 
                         long eventSerialNoInInitialTx = 1;
                         final int tableCount = resultSets.length;
@@ -286,7 +288,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             offsetContext.event(
                                     tableWithSmallestLsn.getChangeTable().getSourceTableId(),
                                     connectorConfig.getSourceTimestampMode().getTimestamp(
-                                            metadataConnection, clock, tableWithSmallestLsn.getResultSet()));
+                                            clock, tableWithSmallestLsn.getResultSet()));
 
                             dispatcher
                                     .dispatchDataChangeEvent(
@@ -307,7 +309,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                     dataConnection.rollback();
                 }
                 catch (SQLException e) {
-                    tablesSlot.set(processErrorFromChangeTableQuery(e, tablesSlot.get(), partition));
+                    tablesSlot.set(processErrorFromChangeTableQuery(databaseName, e, tablesSlot.get()));
                 }
             }
 
@@ -329,6 +331,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
         // For R/W database it is important to execute regular commits to maintain the size of TempDB
         if (connectorConfig.isReadOnlyDatabaseConnection() || pauseBetweenCommits.hasElapsed()) {
             dataConnection.commit();
+            metadataConnection.commit();
         }
     }
 
@@ -343,14 +346,12 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
         newTable.setSourceTable(tableSchema);
     }
 
-    private SqlServerChangeTable[] processErrorFromChangeTableQuery(SQLException exception, SqlServerChangeTable[] currentChangeTables,
-                                                                    SqlServerPartition partition)
+    private SqlServerChangeTable[] processErrorFromChangeTableQuery(String databaseName, SQLException exception,
+                                                                    SqlServerChangeTable[] currentChangeTables)
             throws Exception {
-        final String pattern = "Invalid object name '[#db].cdc.fn_cdc_get_all_changes_(.*)'\\."
-                .replace("[#db]", partition.getDatabaseName());
-        final Matcher m = Pattern.compile(pattern).matcher(exception.getMessage());
-        if (m.matches()) {
-            final String captureName = m.group(1);
+        final Matcher m = MISSING_CDC_FUNCTION_CHANGES_ERROR.matcher(exception.getMessage());
+        if (m.matches() && m.group(1).equals(databaseName)) {
+            final String captureName = m.group(2);
             LOGGER.info("Table is no longer captured with capture instance {}", captureName);
             return Arrays.asList(currentChangeTables).stream()
                     .filter(x -> !x.getCaptureInstance().equals(captureName))
@@ -360,7 +361,8 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
     }
 
     private SqlServerChangeTable[] getCdcTablesToQuery(SqlServerPartition partition, SqlServerOffsetContext offsetContext) throws SQLException, InterruptedException {
-        final Set<SqlServerChangeTable> cdcEnabledTables = dataConnection.listOfChangeTables(partition.getDatabaseName());
+        final String databaseName = partition.getDatabaseName();
+        final Set<SqlServerChangeTable> cdcEnabledTables = dataConnection.listOfChangeTables(databaseName);
         if (cdcEnabledTables.isEmpty()) {
             LOGGER.warn("No table has enabled CDC or security constraints prevents getting the list of change tables");
         }
@@ -395,7 +397,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                     futureTable = captures.get(0);
                 }
                 currentTable.setStopLsn(futureTable.getStartLsn());
-                futureTable.setSourceTable(dataConnection.getTableSchemaFromTable(partition.getDatabaseName(), futureTable));
+                futureTable.setSourceTable(dataConnection.getTableSchemaFromTable(databaseName, futureTable));
                 tables.add(futureTable);
                 LOGGER.info("Multiple capture instances present for the same table: {} and {}", currentTable, futureTable);
             }
@@ -412,7 +414,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                                 partition,
                                 offsetContext,
                                 currentTable,
-                                dataConnection.getTableSchemaFromTable(partition.getDatabaseName(), currentTable),
+                                dataConnection.getTableSchemaFromTable(databaseName, currentTable),
                                 SchemaChangeEventType.CREATE));
             }
 
