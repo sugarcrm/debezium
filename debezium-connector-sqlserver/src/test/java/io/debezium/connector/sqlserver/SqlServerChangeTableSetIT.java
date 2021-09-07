@@ -214,7 +214,7 @@ public class SqlServerChangeTableSetIT extends AbstractConnectorTest {
 
         final Configuration.Builder builder = TestHelper.defaultMultiDatabaseConfig()
                 .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.SCHEMA_ONLY);
-        if (limitTransactionsPerIteration){
+        if (limitTransactionsPerIteration) {
             builder.with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1);
         }
         final Configuration config = builder.build();

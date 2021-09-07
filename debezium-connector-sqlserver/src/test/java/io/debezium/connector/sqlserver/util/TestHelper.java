@@ -64,7 +64,7 @@ public class TestHelper {
     public static final String TEST_DATABASE2 = "testdb2";
     public static final String TEST_REAL_DATABASE1 = "testDB1";
     public static final String TEST_REAL_DATABASE2 = "testDB2";
-//    public static final Map<String, String> TEST_DATABASES = ImmutableMap.of(TEST_DATABASE1, TEST_REAL_DATABASE1, TEST_DATABASE2, TEST_REAL_DATABASE2);
+    // public static final Map<String, String> TEST_DATABASES = ImmutableMap.of(TEST_DATABASE1, TEST_REAL_DATABASE1, TEST_DATABASE2, TEST_REAL_DATABASE2);
     public static final Map<String, String> TEST_DATABASES = ImmutableMap.of(TEST_DATABASE1, TEST_REAL_DATABASE1);
     public static final String TEST_FIRST_DATABASE = TEST_DATABASES.get(TEST_DATABASE1);
     public static final String TEST_SERVER_NAME = "server1";
@@ -174,6 +174,7 @@ public class TestHelper {
                 .reduce((x, y) -> String.join(",", x, y))
                 .get();
         return builder.with(RelationalDatabaseConnectorConfig.SERVER_NAME, TEST_SERVER_NAME)
+                .with(SqlServerConnectorConfig.MAX_TRANSACTIONS_PER_ITERATION, 1)
                 .with(SqlServerConnectorConfig.DATABASE_NAMES.name(), databases)
                 .with(SqlServerConnectorConfig.DATABASE_HISTORY, FileDatabaseHistory.class)
                 .with(FileDatabaseHistory.FILE_PATH, DB_HISTORY_PATH)
