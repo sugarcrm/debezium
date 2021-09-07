@@ -15,15 +15,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
@@ -256,11 +248,15 @@ public class SqlServerConnection extends JdbcConnection {
     public void getChangesForTables(String databaseName, SqlServerChangeTable[] changeTables, Lsn intervalFromLsn,
                                     Lsn intervalToLsn, BlockingMultiResultSetConsumer consumer)
             throws SQLException, InterruptedException {
-        final String[] queries = new String[changeTables.length];
-        final StatementPreparer[] preparers = new StatementPreparer[changeTables.length];
+
+        List<SqlServerChangeTable> aaa = Arrays.stream(changeTables).filter(
+                ct -> ct.getStartLsn().compareTo(intervalToLsn) <= 0).collect(Collectors.toList());
+
+        final String[] queries = new String[aaa.size()];
+        final StatementPreparer[] preparers = new StatementPreparer[aaa.size()];
 
         int idx = 0;
-        for (SqlServerChangeTable changeTable : changeTables) {
+        for (SqlServerChangeTable changeTable : aaa) {
             final String query = getAllChangesForTable
                     .replace(DATABASE_NAME_PLACEHOLDER, databaseName)
                     .replace(STATEMENTS_PLACEHOLDER, changeTable.getCaptureInstance());
