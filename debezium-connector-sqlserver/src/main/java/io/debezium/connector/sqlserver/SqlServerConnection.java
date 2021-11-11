@@ -73,7 +73,7 @@ public class SqlServerConnection extends JdbcConnection {
     private final String get_all_changes_for_table;
     protected static final String LSN_TIMESTAMP_SELECT_STATEMENT = "TODATETIMEOFFSET([#db].sys.fn_cdc_map_lsn_to_time([__$start_lsn]), DATEPART(TZOFFSET, SYSDATETIMEOFFSET()))";
     private static final String GET_LIST_OF_CDC_ENABLED_COLUMNS = "SELECT object_id, column_id, column_name FROM [#db].cdc.captured_columns ORDER BY object_id ASC, column_id ASC";
-    private static final String GET_LIST_OF_CDC_ENABLED_TABLES = "SELECT s.name AS source_schema, o.name AS source_table, ct.capture_instance, ct.object_id, ct.start_lsn FROM [#db].cdc.change_tables ct INNER JOIN [#db].sys.objects o ON ct.source_object_id = o.object_id INNER JOIN [#db].sys.schemas s ON s.schema_id = o.schema_id";
+    private static final String GET_LIST_OF_CDC_ENABLED_TABLES = "WITH EligibleCaptureInstances AS (SELECT ROW_NUMBER() OVER (PARTITION BY ct.source_object_id, ct.start_lsn ORDER BY ct.create_date DESC) AS CISequence, ct.* FROM [#db].cdc.change_tables AS ct#) SELECT OBJECT_SCHEMA_NAME(source_object_id, DB_ID(?)) AS source_schema, OBJECT_NAME(source_object_id, DB_ID(?)) AS source_table, capture_instance, object_id, start_lsn FROM EligibleCaptureInstances WHERE CISequence = 1";
     private static final String GET_LIST_OF_NEW_CDC_ENABLED_TABLES = "SELECT * FROM [#db].cdc.change_tables WHERE start_lsn BETWEEN ? AND ?";
     private static final String OPENING_QUOTING_CHARACTER = "[";
     private static final String CLOSING_QUOTING_CHARACTER = "]";
@@ -402,12 +402,21 @@ public class SqlServerConnection extends JdbcConnection {
         String query = replaceDatabaseNamePlaceholder(GET_LIST_OF_CDC_ENABLED_TABLES, databaseName);
 
         if (toLsn.isAvailable()) {
-            return prepareQueryAndMap(query + " WHERE ct.start_lsn <= ?",
-                    ps -> ps.setBytes(1, toLsn.getBinary()),
+            return prepareQueryAndMap(query.replace(STATEMENTS_PLACEHOLDER, " WHERE ct.start_lsn <= ?"),
+                    ps -> {
+                        ps.setBytes(1, toLsn.getBinary());
+                        ps.setString(2, databaseName);
+                        ps.setString(3, databaseName);
+                    },
                     mapper);
         }
 
-        return queryAndMap(query, mapper);
+        return prepareQueryAndMap(query.replace(STATEMENTS_PLACEHOLDER, ""),
+                ps -> {
+                    ps.setString(1, databaseName);
+                    ps.setString(2, databaseName);
+                },
+                mapper);
     }
 
     public Set<SqlServerChangeTable> listOfNewChangeTables(String databaseName, Lsn fromLsn, Lsn toLsn) throws SQLException {
