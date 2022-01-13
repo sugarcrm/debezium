@@ -47,8 +47,8 @@ public class SqlServerSnapshotChangeEventSource extends RelationalSnapshotChange
 
     public SqlServerSnapshotChangeEventSource(SqlServerConnectorConfig connectorConfig, SqlServerConnection jdbcConnection,
                                               SqlServerDatabaseSchema schema, EventDispatcher<TableId> dispatcher, Clock clock,
-                                              SnapshotProgressListener snapshotProgressListener) {
-        super(connectorConfig, jdbcConnection, schema, dispatcher, clock, snapshotProgressListener);
+                                              List<SnapshotProgressListener> snapshotProgressListeners) {
+        super(connectorConfig, jdbcConnection, schema, dispatcher, clock, snapshotProgressListeners);
         this.connectorConfig = connectorConfig;
         this.jdbcConnection = jdbcConnection;
         this.sqlServerDatabaseSchema = schema;

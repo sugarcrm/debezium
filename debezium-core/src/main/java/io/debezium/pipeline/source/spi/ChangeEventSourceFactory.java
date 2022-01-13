@@ -5,6 +5,7 @@
  */
 package io.debezium.pipeline.source.spi;
 
+import java.util.List;
 import java.util.Optional;
 
 import io.debezium.pipeline.source.snapshot.incremental.IncrementalSnapshotChangeEventSource;
@@ -26,12 +27,12 @@ public interface ChangeEventSourceFactory<P extends Partition, O extends OffsetC
      * {@link StreamingChangeEventSource#execute(ChangeEventSource.ChangeEventSourceContext, Partition, io.debezium.pipeline.spi.OffsetContext)}
      * method.
      *
-     * @param snapshotProgressListener
-     *            A listener called for changes in the state of snapshot. May be {@code null}.
+     * @param snapshotProgressListeners
+     *            The listeners called for changes in the state of snapshot. May be {@code null}.
      *
      * @return A snapshot change event source
      */
-    SnapshotChangeEventSource<P, O> getSnapshotChangeEventSource(SnapshotProgressListener snapshotProgressListener);
+    SnapshotChangeEventSource<P, O> getSnapshotChangeEventSource(List<SnapshotProgressListener> snapshotProgressListeners);
 
     /**
      * Returns a streaming change event source that starts streaming at the given offset.

@@ -5,6 +5,7 @@
  */
 package io.debezium.connector.sqlserver;
 
+import java.util.List;
 import java.util.Optional;
 
 import io.debezium.pipeline.ErrorHandler;
@@ -42,9 +43,10 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
     }
 
     @Override
-    public SnapshotChangeEventSource<SqlServerPartition, SqlServerOffsetContext> getSnapshotChangeEventSource(SnapshotProgressListener snapshotProgressListener) {
+    public SnapshotChangeEventSource<SqlServerPartition, SqlServerOffsetContext> getSnapshotChangeEventSource(List<SnapshotProgressListener> snapshotProgressListeners) {
+        snapshotProgressListeners.add(new SqlServerSnapshotDatabaseNotifier(dataConnection));
         return new SqlServerSnapshotChangeEventSource(configuration, dataConnection, schema, dispatcher, clock,
-                snapshotProgressListener);
+                snapshotProgressListeners);
     }
 
     @Override

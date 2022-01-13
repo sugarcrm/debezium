@@ -7,6 +7,7 @@ package io.debezium.pipeline.source;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -37,11 +38,11 @@ public abstract class AbstractSnapshotChangeEventSource<P extends Partition, O e
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractSnapshotChangeEventSource.class);
 
     private final CommonConnectorConfig connectorConfig;
-    private final SnapshotProgressListener snapshotProgressListener;
+    private final List<SnapshotProgressListener> snapshotProgressListeners;
 
-    public AbstractSnapshotChangeEventSource(CommonConnectorConfig connectorConfig, SnapshotProgressListener snapshotProgressListener) {
+    public AbstractSnapshotChangeEventSource(CommonConnectorConfig connectorConfig, List<SnapshotProgressListener> snapshotProgressListeners) {
         this.connectorConfig = connectorConfig;
-        this.snapshotProgressListener = snapshotProgressListener;
+        this.snapshotProgressListeners = snapshotProgressListeners;
     }
 
     @Override
@@ -66,7 +67,7 @@ public abstract class AbstractSnapshotChangeEventSource<P extends Partition, O e
         boolean completedSuccessfully = true;
 
         try {
-            snapshotProgressListener.snapshotStarted(partition);
+            snapshotProgressListeners.forEach(snapshotProgressListener -> snapshotProgressListener.snapshotStarted(partition));
             return doExecute(context, previousOffset, ctx, snapshottingTask);
         }
         catch (InterruptedException e) {
@@ -83,10 +84,10 @@ public abstract class AbstractSnapshotChangeEventSource<P extends Partition, O e
             complete(ctx);
 
             if (completedSuccessfully) {
-                snapshotProgressListener.snapshotCompleted(partition);
+                snapshotProgressListeners.forEach(snapshotProgressListener -> snapshotProgressListener.snapshotCompleted(partition));
             }
             else {
-                snapshotProgressListener.snapshotAborted(partition);
+                snapshotProgressListeners.forEach(snapshotProgressListener -> snapshotProgressListener.snapshotAborted(partition));
             }
         }
     }

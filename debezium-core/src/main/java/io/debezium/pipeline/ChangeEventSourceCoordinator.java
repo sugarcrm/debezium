@@ -6,7 +6,9 @@
 package io.debezium.pipeline;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -32,6 +34,7 @@ import io.debezium.pipeline.source.spi.ChangeEventSource.ChangeEventSourceContex
 import io.debezium.pipeline.source.spi.ChangeEventSourceFactory;
 import io.debezium.pipeline.source.spi.EventMetadataProvider;
 import io.debezium.pipeline.source.spi.SnapshotChangeEventSource;
+import io.debezium.pipeline.source.spi.SnapshotProgressListener;
 import io.debezium.pipeline.source.spi.StreamingChangeEventSource;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.pipeline.spi.Offsets;
@@ -108,7 +111,11 @@ public class ChangeEventSourceCoordinator<P extends Partition, O extends OffsetC
                     LOGGER.info("Context created");
 
                     Offsets<P, O> streamingOffsets = new Offsets<>(new HashMap<>());
-                    SnapshotChangeEventSource<P, O> snapshotSource = changeEventSourceFactory.getSnapshotChangeEventSource(snapshotMetrics);
+
+                    List<SnapshotProgressListener> snapshotProgressListeners = new ArrayList<>();
+                    snapshotProgressListeners.add(snapshotMetrics);
+
+                    SnapshotChangeEventSource<P, O> snapshotSource = changeEventSourceFactory.getSnapshotChangeEventSource(snapshotProgressListeners);
 
                     for (Map.Entry<P, O> entry : previousOffsets.getOffsets().entrySet()) {
                         P partition = entry.getKey();
