@@ -56,7 +56,8 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
                 dispatcher,
                 errorHandler,
                 clock,
-                schema);
+                schema,
+                new SqlServerStreamingDatabaseNotifier(dataConnection));
     }
 
     @Override

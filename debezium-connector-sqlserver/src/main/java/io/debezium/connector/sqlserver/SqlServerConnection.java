@@ -561,7 +561,7 @@ public class SqlServerConnection extends JdbcConnection {
         return "[" + tableId.catalog() + "].[" + tableId.schema() + "].[" + tableId.table() + "]";
     }
 
-    private String replaceDatabaseNamePlaceholder(String sql, String databaseName) {
+    public String replaceDatabaseNamePlaceholder(String sql, String databaseName) {
         return sql.replace(DATABASE_NAME_PLACEHOLDER, databaseName);
     }
 }

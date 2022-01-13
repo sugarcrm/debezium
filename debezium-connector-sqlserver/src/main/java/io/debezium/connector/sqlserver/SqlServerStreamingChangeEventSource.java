@@ -29,6 +29,7 @@ import io.debezium.connector.sqlserver.SqlServerConnectorConfig.SnapshotMode;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.pipeline.EventDispatcher;
 import io.debezium.pipeline.source.spi.StreamingChangeEventSource;
+import io.debezium.pipeline.source.spi.StreamingProgressListener;
 import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
@@ -79,6 +80,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
 
     private final EventDispatcher<TableId> dispatcher;
     private final ErrorHandler errorHandler;
+    private final StreamingProgressListener streamingProgressListener;
     private final Clock clock;
     private final SqlServerDatabaseSchema schema;
     private final Duration pollInterval;
@@ -89,12 +91,13 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
 
     public SqlServerStreamingChangeEventSource(SqlServerConnectorConfig connectorConfig, SqlServerConnection dataConnection,
                                                SqlServerConnection metadataConnection, EventDispatcher<TableId> dispatcher, ErrorHandler errorHandler, Clock clock,
-                                               SqlServerDatabaseSchema schema) {
+                                               SqlServerDatabaseSchema schema, StreamingProgressListener streamingProgressListener) {
         this.connectorConfig = connectorConfig;
         this.dataConnection = dataConnection;
         this.metadataConnection = metadataConnection;
         this.dispatcher = dispatcher;
         this.errorHandler = errorHandler;
+        this.streamingProgressListener = streamingProgressListener;
         this.clock = clock;
         this.schema = schema;
         this.pollInterval = connectorConfig.getPollInterval();
@@ -331,6 +334,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                 new SqlServerSchemaChangeEventEmitter(partition, offsetContext, newTable, tableSchema,
                         SchemaChangeEventType.ALTER));
         newTable.setSourceTable(tableSchema);
+        streamingProgressListener.onReadingNewChangeTable(partition, newTable);
     }
 
     private SqlServerChangeTable[] processErrorFromChangeTableQuery(String databaseName, SQLException exception,
