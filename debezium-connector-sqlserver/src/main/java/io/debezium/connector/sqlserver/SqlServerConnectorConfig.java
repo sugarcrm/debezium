@@ -339,7 +339,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
             .withDescription("Add OPTION(RECOMPILE) on each SELECT statement during the incremental snapshot process. "
                     + "This prevents parameter sniffing but can cause CPU pressure on the source database.");
 
-    public static final Field DATABASE_CALLBACKS = Field.createInternal("database.callbacks")
+    public static final Field DATABASE_CALLBACKS = Field.create("database.callbacks")
             .withDisplayName("Database Callbacks")
             .withDefault(false)
             .withType(Type.BOOLEAN)
@@ -438,6 +438,12 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
         this.optionDatabaseCallbacks = config.getBoolean(DATABASE_CALLBACKS);
         this.optionRecompile = config.getBoolean(INCREMENTAL_SNAPSHOT_OPTION_RECOMPILE);
+        if (optionDatabaseCallbacks) {
+            LOGGER.warn("Database callbacks are enabled");
+        }
+        else {
+            LOGGER.warn("Database callbacks are disabled");
+        }
     }
 
     public List<String> getDatabaseNames() {
