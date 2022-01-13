@@ -339,6 +339,14 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
             .withDescription("Add OPTION(RECOMPILE) on each SELECT statement during the incremental snapshot process. "
                     + "This prevents parameter sniffing but can cause CPU pressure on the source database.");
 
+    public static final Field DATABASE_CALLBACKS = Field.createInternal("database.callbacks")
+            .withDisplayName("Database Callbacks")
+            .withDefault(false)
+            .withType(Type.BOOLEAN)
+            .withImportance(Importance.LOW)
+            .withValidation(Field::isBoolean)
+            .withDescription("This property can be used to enable/disable performing database callbacks during snapshot or streaming.");
+
     private static final ConfigDefinition CONFIG_DEFINITION = HistorizedRelationalDatabaseConnectorConfig.CONFIG_DEFINITION.edit()
             .name("SQL Server")
             .type(
@@ -356,6 +364,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
                     SOURCE_TIMESTAMP_MODE,
                     MAX_TRANSACTIONS_PER_ITERATION,
                     BINARY_HANDLING_MODE,
+                    DATABASE_CALLBACKS,
                     SCHEMA_NAME_ADJUSTMENT_MODE,
                     INCREMENTAL_SNAPSHOT_OPTION_RECOMPILE,
                     INCREMENTAL_SNAPSHOT_CHUNK_SIZE,
@@ -385,6 +394,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     private final int maxTransactionsPerIteration;
     private final boolean multiPartitionMode;
     private final boolean optionRecompile;
+    private final boolean optionDatabaseCallbacks;
 
     public SqlServerConnectorConfig(Configuration config) {
         super(SqlServerConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(), x -> x.schema() + "." + x.table(), true,
@@ -426,6 +436,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
             LOGGER.warn("The option '{}' is no longer taken into account. The optimization is always enabled.", MAX_LSN_OPTIMIZATION.name());
         }
 
+        this.optionDatabaseCallbacks = config.getBoolean(DATABASE_CALLBACKS);
         this.optionRecompile = config.getBoolean(INCREMENTAL_SNAPSHOT_OPTION_RECOMPILE);
     }
 
@@ -439,6 +450,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
     public boolean isMultiPartitionModeEnabled() {
         return multiPartitionMode;
+    }
+
+    public boolean getOptionDatabaseCallbacks() {
+        return optionDatabaseCallbacks;
     }
 
     public SnapshotIsolationMode getSnapshotIsolationMode() {

@@ -51,6 +51,9 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
 
     @Override
     public StreamingChangeEventSource<SqlServerPartition, SqlServerOffsetContext> getStreamingChangeEventSource() {
+        SqlServerStreamingProgressListener streamingProgressListener = configuration.getOptionDatabaseCallbacks()
+                ? new SqlServerStreamingProgressDatabaseCallbacks(dataConnection)
+                : SqlServerStreamingProgressListener.NO_OP;
         return new SqlServerStreamingChangeEventSource(
                 configuration,
                 dataConnection,
@@ -58,7 +61,8 @@ public class SqlServerChangeEventSourceFactory implements ChangeEventSourceFacto
                 dispatcher,
                 errorHandler,
                 clock,
-                schema);
+                schema,
+                streamingProgressListener);
     }
 
     @Override

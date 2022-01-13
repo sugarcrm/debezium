@@ -35,6 +35,7 @@ import io.debezium.config.Configuration;
 import io.debezium.data.Envelope;
 import io.debezium.jdbc.JdbcConfiguration;
 import io.debezium.jdbc.JdbcConnection;
+import io.debezium.relational.ChangeTable;
 import io.debezium.relational.Column;
 import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
@@ -104,6 +105,7 @@ public class SqlServerConnection extends JdbcConnection {
     private static final String GET_NEW_CHANGE_TABLES = "SELECT * FROM [#db].cdc.change_tables WHERE start_lsn BETWEEN ? AND ?";
     private static final String OPENING_QUOTING_CHARACTER = "[";
     private static final String CLOSING_QUOTING_CHARACTER = "]";
+    private static final String START_READING_CHANGE_TABLE = "EXEC [#db].dbo.DebeziumSQLConnector_StartReadingFromCaptureInstance @CaptureInstanceName = ?";
 
     private static final String URL_PATTERN = "jdbc:sqlserver://${" + JdbcConfiguration.HOSTNAME + "}:${" + JdbcConfiguration.PORT + "}";
 
@@ -611,5 +613,13 @@ public class SqlServerConnection extends JdbcConnection {
 
     public SqlServerDefaultValueConverter getDefaultValueConverter() {
         return defaultValueConverter;
+    }
+
+    public void callbackOnReadingNewChangeTable(SqlServerPartition partition, ChangeTable table) throws SQLException {
+        final String query = replaceDatabaseNamePlaceholder(START_READING_CHANGE_TABLE, partition.getDatabaseName());
+        prepareUpdate(query, ps -> {
+            LOGGER.trace("Calling the StartReadingFromCaptureInstance stored procedure with change table: {}", table);
+            ps.setString(1, table.getCaptureInstance());
+        });
     }
 }
