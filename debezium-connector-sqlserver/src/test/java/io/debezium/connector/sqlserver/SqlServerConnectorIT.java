@@ -59,6 +59,7 @@ import io.debezium.relational.history.FileDatabaseHistory;
 import io.debezium.relational.history.HistoryRecordComparator;
 import io.debezium.relational.history.TableChanges;
 import io.debezium.schema.DatabaseSchema;
+import io.debezium.util.Collect;
 import io.debezium.util.Testing;
 
 /**
@@ -2750,6 +2751,27 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
             // https://docs.microsoft.com/en-us/sql/t-sql/statements/drop-database-transact-sql?view=sql-server-ver15#general-remarks
             connection.execute("ALTER DATABASE " + TestHelper.TEST_DATABASE2 + " SET ONLINE");
         }
+    }
+
+    @Test
+    @FixFor("DBZ-5033")
+    public void shouldIgnoreNullOffsetsWhenRecoveringHistory() {
+        final Configuration config1 = TestHelper.defaultMultiDatabaseConfig(
+                Collections.singletonList(TestHelper.TEST_DATABASE1))
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL_ONLY)
+                .build();
+        start(SqlServerConnector.class, config1);
+        assertConnectorIsRunning();
+        TestHelper.waitForSnapshotToBeCompleted(TestHelper.TEST_REAL_DATABASE1);
+        stopConnector();
+
+        final Configuration config2 = TestHelper.defaultMultiDatabaseConfig(
+                Collect.arrayListOf(TestHelper.TEST_DATABASE1, TestHelper.TEST_DATABASE2))
+                .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL)
+                .build();
+        start(SqlServerConnector.class, config2);
+        assertConnectorIsRunning();
+        stopConnector();
     }
 
     private void assertRecord(Struct record, List<SchemaAndValueField> expected) {
