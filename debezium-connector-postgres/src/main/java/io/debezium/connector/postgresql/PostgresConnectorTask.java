@@ -22,6 +22,7 @@ import io.debezium.DebeziumException;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.postgresql.connection.PostgresConnection;
 import io.debezium.connector.postgresql.connection.PostgresConnection.PostgresValueConverterBuilder;
@@ -60,7 +61,7 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
     private volatile PostgresSchema schema;
 
     @Override
-    public ChangeEventSourceCoordinator<PostgresPartition, PostgresOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<PostgresPartition, PostgresOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         final PostgresConnectorConfig connectorConfig = new PostgresConnectorConfig(config);
         final TopicSelector<TableId> topicSelector = PostgresTopicSelector.create(connectorConfig);
         final Snapshotter snapshotter = connectorConfig.getSnapshotter();
@@ -164,7 +165,7 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
                     .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                     .build();
 
-            ErrorHandler errorHandler = new PostgresErrorHandler(connectorConfig, queue);
+            ErrorHandler errorHandler = new PostgresErrorHandler(connectorConfig, queue, errorMeter);
 
             final PostgresEventMetadataProvider metadataProvider = new PostgresEventMetadataProvider();
 
@@ -215,13 +216,13 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
                             replicationConnection,
                             slotCreatedInfo,
                             slotInfo),
-                    new DefaultChangeEventSourceMetricsFactory(),
+                    new DefaultChangeEventSourceMetricsFactory<>(),
                     dispatcher,
                     schema,
                     snapshotter,
                     slotInfo);
 
-            coordinator.start(taskContext, this.queue, metadataProvider);
+            coordinator.start(taskContext, this.queue, errorMeter, metadataProvider);
 
             return coordinator;
         }

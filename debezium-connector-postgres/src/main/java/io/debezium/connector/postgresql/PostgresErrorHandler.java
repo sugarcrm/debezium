@@ -12,6 +12,7 @@ import org.postgresql.util.PSQLException;
 import io.debezium.DebeziumException;
 import io.debezium.annotation.Immutable;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.util.Collect;
 
@@ -32,8 +33,9 @@ public class PostgresErrorHandler extends ErrorHandler {
             "terminating connection due to unexpected postmaster exit",
             "terminating connection due to administrator command");
 
-    public PostgresErrorHandler(PostgresConnectorConfig connectorConfig, ChangeEventQueue<?> queue) {
-        super(PostgresConnector.class, connectorConfig, queue);
+    public PostgresErrorHandler(PostgresConnectorConfig connectorConfig, ChangeEventQueue<?> queue,
+                                ErrorListener errorListener) {
+        super(PostgresConnector.class, connectorConfig, queue, errorListener);
     }
 
     @Override

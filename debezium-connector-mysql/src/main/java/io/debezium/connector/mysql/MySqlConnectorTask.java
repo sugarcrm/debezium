@@ -17,6 +17,7 @@ import io.debezium.DebeziumException;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.mysql.MySqlConnection.MySqlConnectionConfiguration;
 import io.debezium.connector.mysql.MySqlConnectorConfig.BigIntUnsignedHandlingMode;
@@ -60,7 +61,7 @@ public class MySqlConnectorTask extends BaseSourceTask<MySqlPartition, MySqlOffs
     }
 
     @Override
-    public ChangeEventSourceCoordinator<MySqlPartition, MySqlOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<MySqlPartition, MySqlOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         final Clock clock = Clock.system();
         final MySqlConnectorConfig connectorConfig = new MySqlConnectorConfig(
                 config.edit()
@@ -132,7 +133,7 @@ public class MySqlConnectorTask extends BaseSourceTask<MySqlPartition, MySqlOffs
                 .buffering()
                 .build();
 
-        errorHandler = new MySqlErrorHandler(connectorConfig, queue);
+        errorHandler = new MySqlErrorHandler(connectorConfig, queue, errorMeter);
 
         final MySqlEventMetadataProvider metadataProvider = new MySqlEventMetadataProvider();
 
@@ -180,7 +181,7 @@ public class MySqlConnectorTask extends BaseSourceTask<MySqlPartition, MySqlOffs
                 dispatcher,
                 schema);
 
-        coordinator.start(taskContext, this.queue, metadataProvider);
+        coordinator.start(taskContext, this.queue, errorMeter, metadataProvider);
 
         return coordinator;
     }

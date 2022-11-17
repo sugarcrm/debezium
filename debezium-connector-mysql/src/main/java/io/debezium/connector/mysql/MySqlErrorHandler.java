@@ -11,6 +11,7 @@ import com.github.shyiko.mysql.binlog.network.ServerException;
 
 import io.debezium.DebeziumException;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.ErrorHandler;
 
 /**
@@ -22,8 +23,9 @@ public class MySqlErrorHandler extends ErrorHandler {
 
     private static final String SQL_CODE_TOO_MANY_CONNECTIONS = "08004";
 
-    public MySqlErrorHandler(MySqlConnectorConfig connectorConfig, ChangeEventQueue<?> queue) {
-        super(MySqlConnector.class, connectorConfig, queue);
+    public MySqlErrorHandler(MySqlConnectorConfig connectorConfig, ChangeEventQueue<?> queue,
+                             ErrorListener errorListener) {
+        super(MySqlConnector.class, connectorConfig, queue, errorListener);
     }
 
     @Override

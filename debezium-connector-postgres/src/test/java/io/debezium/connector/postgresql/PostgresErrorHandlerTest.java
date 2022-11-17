@@ -13,6 +13,7 @@ import org.postgresql.util.PSQLState;
 import io.debezium.DebeziumException;
 import io.debezium.config.Configuration;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.DataChangeEvent;
 
 public class PostgresErrorHandlerTest {
@@ -22,7 +23,8 @@ public class PostgresErrorHandlerTest {
             new PostgresConnectorConfig(Configuration.create()
                     .with(PostgresConnectorConfig.SERVER_NAME, "postgres")
                     .build()),
-            new ChangeEventQueue.Builder<DataChangeEvent>().build());
+            new ChangeEventQueue.Builder<DataChangeEvent>().build(),
+            ErrorListener.NOOP);
 
     @Test
     public void classifiedPSQLExceptionIsRetryable() {

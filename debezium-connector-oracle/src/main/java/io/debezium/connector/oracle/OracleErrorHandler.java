@@ -11,6 +11,7 @@ import java.util.Set;
 
 import io.debezium.annotation.Immutable;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.ErrorHandler;
 import io.debezium.util.Collect;
 
@@ -48,8 +49,9 @@ public class OracleErrorHandler extends ErrorHandler {
     @Immutable
     private static final Set<String> RETRIABLE_ERROR_MESSAGES = Collect.unmodifiableSet("No more data to read from socket");
 
-    public OracleErrorHandler(OracleConnectorConfig connectorConfig, ChangeEventQueue<?> queue) {
-        super(OracleConnector.class, connectorConfig, queue);
+    public OracleErrorHandler(OracleConnectorConfig connectorConfig, ChangeEventQueue<?> queue,
+                              ErrorListener errorListener) {
+        super(OracleConnector.class, connectorConfig, queue, errorListener);
     }
 
     @Override

@@ -50,6 +50,19 @@ public abstract class Metrics {
         this.name = metricName(taskContext.getConnectorType(), taskContext.getConnectorName(), contextName);
     }
 
+    protected Metrics(CdcSourceTaskContext taskContext) {
+        Map<String, String> tags = Collect.linkMapOf("server", taskContext.getConnectorName());
+        String taskId = taskContext.getTaskId();
+        // This is a workaround for the SQL Server connector capable of running in both the single- and multi-partition
+        // modes in Debezium 1.9. A better approach would be to pass an explicit {@code boolean multiPartitionMode}
+        // flag, but it would increase the number of required API changes and would have to be removed
+        // during the contribution upstream anyway.
+        if (taskId != null) {
+            tags.put("task", taskId);
+        }
+        this.name = metricName(taskContext.getConnectorType(), tags);
+    }
+
     protected Metrics(CdcSourceTaskContext taskContext, Map<String, String> tags) {
         this.name = metricName(taskContext.getConnectorType(), tags);
     }

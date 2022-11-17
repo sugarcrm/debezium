@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.sqlserver.metrics.SqlServerMetricsFactory;
 import io.debezium.pipeline.ChangeEventSourceCoordinator;
@@ -55,7 +56,7 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
     }
 
     @Override
-    public ChangeEventSourceCoordinator<SqlServerPartition, SqlServerOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<SqlServerPartition, SqlServerOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         final Clock clock = Clock.system();
 
         // By default do not load whole result sets into memory
@@ -97,7 +98,7 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
                 .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                 .build();
 
-        errorHandler = new SqlServerErrorHandler(connectorConfig, queue);
+        errorHandler = new SqlServerErrorHandler(connectorConfig, queue, errorMeter);
 
         final SqlServerEventMetadataProvider metadataProvider = new SqlServerEventMetadataProvider();
 
@@ -122,7 +123,7 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
                 schema,
                 clock);
 
-        coordinator.start(taskContext, this.queue, metadataProvider);
+        coordinator.start(taskContext, this.queue, errorMeter, metadataProvider);
 
         return coordinator;
     }

@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import io.debezium.annotation.NotThreadSafe;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.mysql.GtidSet;
 import io.debezium.connector.mysql.Module;
@@ -67,7 +68,7 @@ public final class MySqlConnectorTask extends BaseSourceTask<MySqlPartition, MyS
     }
 
     @Override
-    public ChangeEventSourceCoordinator<MySqlPartition, MySqlOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<MySqlPartition, MySqlOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         final String serverName = config.getString(MySqlConnectorConfig.SERVER_NAME);
         PreviousContext prevLoggingContext = LoggingContext.forConnector(Module.contextName(), serverName, "task");
 

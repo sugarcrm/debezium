@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import io.debezium.annotation.ThreadSafe;
 import io.debezium.config.CommonConnectorConfig;
 import io.debezium.connector.base.ChangeEventQueueMetrics;
+import io.debezium.connector.base.ErrorMeter;
+import io.debezium.connector.base.ErrorMetrics;
 import io.debezium.connector.common.CdcSourceTaskContext;
 import io.debezium.pipeline.metrics.SnapshotChangeEventSourceMetrics;
 import io.debezium.pipeline.metrics.StreamingChangeEventSourceMetrics;
@@ -68,6 +70,7 @@ public class ChangeEventSourceCoordinator<P extends Partition, O extends OffsetC
     protected volatile StreamingChangeEventSource<P, O> streamingSource;
     protected final ReentrantLock commitOffsetLock = new ReentrantLock();
 
+    protected ErrorMetrics errorMetrics;
     protected SnapshotChangeEventSourceMetrics<P> snapshotMetrics;
     protected StreamingChangeEventSourceMetrics<P> streamingMetrics;
 
@@ -86,10 +89,11 @@ public class ChangeEventSourceCoordinator<P extends Partition, O extends OffsetC
     }
 
     public synchronized void start(CdcSourceTaskContext taskContext, ChangeEventQueueMetrics changeEventQueueMetrics,
-                                   EventMetadataProvider metadataProvider) {
+                                   ErrorMeter errorMeter, EventMetadataProvider metadataProvider) {
 
         AtomicReference<LoggingContext.PreviousContext> previousLogContext = new AtomicReference<>();
         try {
+            this.errorMetrics = new ErrorMetrics(taskContext, errorMeter);
             this.snapshotMetrics = changeEventSourceMetricsFactory.getSnapshotMetrics(taskContext, changeEventQueueMetrics, metadataProvider);
             this.streamingMetrics = changeEventSourceMetricsFactory.getStreamingMetrics(taskContext, changeEventQueueMetrics, metadataProvider);
             running = true;
@@ -98,6 +102,7 @@ public class ChangeEventSourceCoordinator<P extends Partition, O extends OffsetC
             executor.submit(() -> {
                 try {
                     previousLogContext.set(taskContext.configureLoggingContext("snapshot"));
+                    errorMetrics.register();
                     snapshotMetrics.register();
                     streamingMetrics.register();
                     LOGGER.info("Metrics registered");
@@ -217,6 +222,7 @@ public class ChangeEventSourceCoordinator<P extends Partition, O extends OffsetC
             eventDispatcher.close();
         }
         finally {
+            errorMetrics.unregister();
             snapshotMetrics.unregister();
             streamingMetrics.unregister();
         }

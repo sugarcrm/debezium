@@ -15,19 +15,22 @@ import org.slf4j.LoggerFactory;
 
 import io.debezium.config.CommonConnectorConfig;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 
 public class ErrorHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ErrorHandler.class);
 
     private final ChangeEventQueue<?> queue;
+    private final ErrorListener errorListener;
     private final AtomicReference<Throwable> producerThrowable;
     private final CommonConnectorConfig connectorConfig;
 
     public ErrorHandler(Class<? extends SourceConnector> connectorType, CommonConnectorConfig connectorConfig,
-                        ChangeEventQueue<?> queue) {
+                        ChangeEventQueue<?> queue, ErrorListener errorListener) {
         this.connectorConfig = connectorConfig;
         this.queue = queue;
+        this.errorListener = errorListener;
         this.producerThrowable = new AtomicReference<>();
     }
 
@@ -45,6 +48,7 @@ public class ErrorHandler {
             if (retriable) {
                 queue.producerException(
                         new RetriableException("An exception occurred in the change event producer. This connector will be restarted.", producerThrowable));
+                errorListener.onRetriableError();
             }
             else {
                 queue.producerException(new ConnectException("An exception occurred in the change event producer. This connector will be stopped.", producerThrowable));

@@ -17,6 +17,7 @@ import io.debezium.DebeziumException;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.oracle.StreamingAdapter.TableNameCaseSensitivity;
 import io.debezium.heartbeat.HeartbeatFactory;
@@ -49,7 +50,7 @@ public class OracleConnectorTask extends BaseSourceTask<OraclePartition, OracleO
     }
 
     @Override
-    public ChangeEventSourceCoordinator<OraclePartition, OracleOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<OraclePartition, OracleOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         OracleConnectorConfig connectorConfig = new OracleConnectorConfig(config);
         TopicSelector<TableId> topicSelector = OracleTopicSelector.defaultSelector(connectorConfig);
         SchemaNameAdjuster schemaNameAdjuster = connectorConfig.schemaNameAdjustmentMode().createAdjuster();
@@ -85,7 +86,7 @@ public class OracleConnectorTask extends BaseSourceTask<OraclePartition, OracleO
                 .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                 .build();
 
-        errorHandler = new OracleErrorHandler(connectorConfig, queue);
+        errorHandler = new OracleErrorHandler(connectorConfig, queue, errorMeter);
 
         final OracleEventMetadataProvider metadataProvider = new OracleEventMetadataProvider();
 
@@ -121,7 +122,7 @@ public class OracleConnectorTask extends BaseSourceTask<OraclePartition, OracleO
                 dispatcher,
                 schema);
 
-        coordinator.start(taskContext, this.queue, metadataProvider);
+        coordinator.start(taskContext, this.queue, errorMeter, metadataProvider);
 
         return coordinator;
     }

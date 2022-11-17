@@ -23,6 +23,7 @@ import io.debezium.annotation.ThreadSafe;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.connector.common.BaseSourceTask;
 import io.debezium.connector.mongodb.MongoDbConnectorConfig.CaptureMode;
 import io.debezium.connector.mongodb.metrics.MongoDbChangeEventSourceMetricsFactory;
@@ -69,7 +70,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask<MongoDbPartition,
     }
 
     @Override
-    public ChangeEventSourceCoordinator<MongoDbPartition, MongoDbOffsetContext> start(Configuration config) {
+    public ChangeEventSourceCoordinator<MongoDbPartition, MongoDbOffsetContext> start(Configuration config, ErrorMeter errorMeter) {
         final MongoDbConnectorConfig connectorConfig = new MongoDbConnectorConfig(config);
         final SchemaNameAdjuster schemaNameAdjuster = connectorConfig.schemaNameAdjustmentMode().createAdjuster();
 
@@ -125,7 +126,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask<MongoDbPartition,
                     .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                     .build();
 
-            errorHandler = new MongoDbErrorHandler(connectorConfig, queue);
+            errorHandler = new MongoDbErrorHandler(connectorConfig, queue, errorMeter);
 
             final MongoDbEventMetadataProvider metadataProvider = new MongoDbEventMetadataProvider();
 
@@ -157,7 +158,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask<MongoDbPartition,
                     dispatcher,
                     schema);
 
-            coordinator.start(taskContext, this.queue, metadataProvider);
+            coordinator.start(taskContext, this.queue, errorMeter, metadataProvider);
 
             return coordinator;
         }

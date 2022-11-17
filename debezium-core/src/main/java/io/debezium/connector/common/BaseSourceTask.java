@@ -27,6 +27,7 @@ import io.debezium.annotation.SingleThreadAccess;
 import io.debezium.config.CommonConnectorConfig;
 import io.debezium.config.Configuration;
 import io.debezium.config.Field;
+import io.debezium.connector.base.ErrorMeter;
 import io.debezium.pipeline.ChangeEventSourceCoordinator;
 import io.debezium.pipeline.spi.OffsetContext;
 import io.debezium.pipeline.spi.Offsets;
@@ -61,6 +62,7 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
     private final ReentrantLock stateLock = new ReentrantLock();
 
     private volatile ElapsedTimeStrategy restartDelay;
+    private final ErrorMeter errorMeter = new ErrorMeter();
 
     /**
      * Raw connector properties, kept here so they can be passed again in case of a restart.
@@ -127,7 +129,7 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
                 });
             }
 
-            this.coordinator = start(config);
+            this.coordinator = start(config, errorMeter);
         }
         finally {
             stateLock.unlock();
@@ -137,11 +139,10 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
     /**
      * Called once when starting this source task.
      *
-     * @param config
-     *            the task configuration; implementations should wrap it in a dedicated implementation of
-     *            {@link CommonConnectorConfig} and work with typed access to configuration properties that way
+     * @param config     the task configuration; implementations should wrap it in a dedicated implementation of
+     *                   {@link CommonConnectorConfig} and work with typed access to configuration properties that way
      */
-    protected abstract ChangeEventSourceCoordinator<P, O> start(Configuration config);
+    protected abstract ChangeEventSourceCoordinator<P, O> start(Configuration config, ErrorMeter errorMeter);
 
     @Override
     public final List<SourceRecord> poll() throws InterruptedException {

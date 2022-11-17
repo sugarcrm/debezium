@@ -18,6 +18,7 @@ import io.debezium.config.CommonConnectorConfig;
 import io.debezium.config.Configuration;
 import io.debezium.connector.SourceInfoStructMaker;
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.util.LoggingContext;
 
 public class ErrorHandlerTest {
@@ -136,7 +137,7 @@ public class ErrorHandlerTest {
 
     private ErrorHandler errorHandler(final Configuration config, final ChangeEventQueue<Object> queue) {
         final ErrorHandler errorHandler = new ErrorHandler(SourceConnector.class, new TestConnectorConfig(config),
-                queue);
+                queue, ErrorListener.NOOP);
         return errorHandler;
     }
 

@@ -8,6 +8,7 @@ package io.debezium.connector.sqlserver;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.ErrorHandler;
 
 /**
@@ -17,8 +18,9 @@ import io.debezium.pipeline.ErrorHandler;
  */
 public class SqlServerErrorHandler extends ErrorHandler {
 
-    public SqlServerErrorHandler(SqlServerConnectorConfig connectorConfig, ChangeEventQueue<?> queue) {
-        super(SqlServerConnector.class, connectorConfig, queue);
+    public SqlServerErrorHandler(SqlServerConnectorConfig connectorConfig, ChangeEventQueue<?> queue,
+                                 ErrorListener errorListener) {
+        super(SqlServerConnector.class, connectorConfig, queue, errorListener);
     }
 
     @Override

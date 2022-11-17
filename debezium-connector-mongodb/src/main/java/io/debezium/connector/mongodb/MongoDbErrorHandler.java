@@ -6,6 +6,7 @@
 package io.debezium.connector.mongodb;
 
 import io.debezium.connector.base.ChangeEventQueue;
+import io.debezium.connector.base.ErrorListener;
 import io.debezium.pipeline.ErrorHandler;
 
 /**
@@ -15,8 +16,9 @@ import io.debezium.pipeline.ErrorHandler;
  */
 public class MongoDbErrorHandler extends ErrorHandler {
 
-    public MongoDbErrorHandler(MongoDbConnectorConfig connectorConfig, ChangeEventQueue<?> queue) {
-        super(MongoDbConnector.class, connectorConfig, queue);
+    public MongoDbErrorHandler(MongoDbConnectorConfig connectorConfig, ChangeEventQueue<?> queue,
+                               ErrorListener errorListener) {
+        super(MongoDbConnector.class, connectorConfig, queue, errorListener);
     }
 
     @Override
