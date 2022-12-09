@@ -26,6 +26,7 @@ import org.apache.kafka.connect.source.SourceTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.debezium.DebeziumException;
 import io.debezium.annotation.SingleThreadAccess;
 import io.debezium.annotation.VisibleForTesting;
 import io.debezium.config.CommonConnectorConfig;
@@ -73,7 +74,7 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
      * The change event source coordinator for those connectors adhering to the new
      * framework structure, {@code null} for legacy-style connectors.
      */
-    private ChangeEventSourceCoordinator<P, O> coordinator;
+    protected ChangeEventSourceCoordinator<P, O> coordinator;
 
     /**
      * The latest offsets that have been acknowledged by the Kafka producer. Will be
@@ -166,8 +167,17 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
             return records;
         }
         catch (RetriableException e) {
-            stop(true);
-            throw e;
+            boolean doRestart = shouldRestartOnRetriableException();
+            stop(doRestart);
+
+            if (doRestart) {
+                throw e;
+            }
+            else {
+                String errorMsg = "The connector will not be restarted.";
+                LOGGER.error(errorMsg);
+                throw new DebeziumException(errorMsg);
+            }
         }
     }
 
@@ -212,6 +222,10 @@ public abstract class BaseSourceTask<P extends Partition, O extends OffsetContex
      * Returns the next batch of source records, if any are available.
      */
     protected abstract List<SourceRecord> doPoll() throws InterruptedException;
+
+    public boolean shouldRestartOnRetriableException() {
+        return true;
+    }
 
     /**
      * Starts this connector in case it has been stopped after a retriable error,

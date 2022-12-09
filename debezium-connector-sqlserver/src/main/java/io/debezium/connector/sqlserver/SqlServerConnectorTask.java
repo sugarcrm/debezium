@@ -48,6 +48,9 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
     private volatile ErrorHandler errorHandler;
     private volatile SqlServerDatabaseSchema schema;
 
+    private int maxRetriableRestarts;
+    private int retriableRestarts = 0;
+
     @Override
     public String version() {
         return Module.version();
@@ -64,6 +67,7 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
                 .build();
 
         final SqlServerConnectorConfig connectorConfig = new SqlServerConnectorConfig(config);
+        maxRetriableRestarts = connectorConfig.getMaxRetriableRestarts();
         final TopicNamingStrategy topicNamingStrategy = connectorConfig.getTopicNamingStrategy(
                 CommonConnectorConfig.TOPIC_NAMING_STRATEGY, true);
         final SchemaNameAdjuster schemaNameAdjuster = connectorConfig.schemaNameAdjustmentMode().createAdjuster();
@@ -135,7 +139,30 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
                 .map(DataChangeEvent::getRecord)
                 .collect(Collectors.toList());
 
+        if (retriableRestarts > 0 && ((SqlServerChangeEventSourceCoordinator) coordinator).streamingIterationCompleted()) {
+            retriableRestarts = 0;
+        }
+
         return sourceRecords;
+    }
+
+    @Override
+    public boolean shouldRestartOnRetriableException() {
+        retriableRestarts++;
+
+        boolean doRestart = retriableRestarts <= maxRetriableRestarts;
+        if (doRestart) {
+            LOGGER.info("{} of {} retriable restarts will be attempted", retriableRestarts,
+                    maxRetriableRestarts);
+        }
+        else {
+            String errorMsg = String.format(
+                    "The maximum number of retriable restarts: %d has been attempted",
+                    maxRetriableRestarts);
+            LOGGER.error(errorMsg);
+        }
+
+        return doRestart;
     }
 
     @Override

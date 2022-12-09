@@ -43,8 +43,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlServerConnectorConfig.class);
 
     public static final String MAX_TRANSACTIONS_PER_ITERATION_CONFIG_NAME = "max.iteration.transactions";
+    public static final String MAX_RETRIABLE_RESTARTS_CONFIG_NAME = "max.connector.retriable.restarts";
     protected static final int DEFAULT_PORT = 1433;
     protected static final int DEFAULT_MAX_TRANSACTIONS_PER_ITERATION = 0;
+    protected static final int DEFAULT_MAX_RETRIABLE_RESTARTS = 10;
     private static final String READ_ONLY_INTENT = "ReadOnly";
     private static final String APPLICATION_INTENT_KEY = "database.applicationIntent";
 
@@ -254,6 +256,18 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
             .withValidation(Field::isNonNegativeInteger)
             .withDescription("This property can be used to reduce the connector memory usage footprint when changes are streamed from multiple tables per database.");
 
+    public static final Field MAX_RETRIABLE_RESTARTS = Field.create(MAX_RETRIABLE_RESTARTS_CONFIG_NAME)
+            .withDisplayName("Maximum retriable restarts")
+            .withType(Type.INT)
+            .withGroup(Field.createGroupEntry(Field.Group.CONNECTOR_ADVANCED, 2))
+            .withWidth(Width.MEDIUM)
+            .withImportance(Importance.LOW)
+            .withDefault(DEFAULT_MAX_RETRIABLE_RESTARTS)
+            .withValidation(Field::isPositiveInteger)
+            .withDescription(
+                    "The maximum number of retriable restarts before an exception occurs. Defaults to " + DEFAULT_MAX_RETRIABLE_RESTARTS
+                            + ".");
+
     public static final Field SNAPSHOT_MODE = Field.create("snapshot.mode")
             .withDisplayName("Snapshot mode")
             .withEnum(SnapshotMode.class, SnapshotMode.INITIAL)
@@ -331,6 +345,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     private final SnapshotIsolationMode snapshotIsolationMode;
     private final boolean readOnlyDatabaseConnection;
     private final int maxTransactionsPerIteration;
+    private final int maxRetriableRestarts;
     private final boolean optionRecompile;
 
     public SqlServerConnectorConfig(Configuration config) {
@@ -365,6 +380,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
         }
 
         this.maxTransactionsPerIteration = config.getInteger(MAX_TRANSACTIONS_PER_ITERATION);
+        this.maxRetriableRestarts = config.getInteger(MAX_RETRIABLE_RESTARTS);
 
         if (!config.getBoolean(MAX_LSN_OPTIMIZATION)) {
             LOGGER.warn("The option '{}' is no longer taken into account. The optimization is always enabled.", MAX_LSN_OPTIMIZATION.name());
@@ -416,6 +432,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
     public int getMaxTransactionsPerIteration() {
         return maxTransactionsPerIteration;
+    }
+
+    public int getMaxRetriableRestarts() {
+        return maxRetriableRestarts;
     }
 
     public boolean getOptionRecompile() {

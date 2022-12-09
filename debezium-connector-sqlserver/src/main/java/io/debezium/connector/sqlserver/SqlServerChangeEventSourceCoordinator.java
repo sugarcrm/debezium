@@ -41,6 +41,8 @@ public class SqlServerChangeEventSourceCoordinator extends ChangeEventSourceCoor
     private final Clock clock;
     private final Duration pollInterval;
 
+    private AtomicReference<Boolean> streamingIterationCompleted;
+
     public SqlServerChangeEventSourceCoordinator(Offsets<SqlServerPartition, SqlServerOffsetContext> previousOffsets, ErrorHandler errorHandler,
                                                  Class<? extends SourceConnector> connectorType,
                                                  CommonConnectorConfig connectorConfig,
@@ -51,8 +53,13 @@ public class SqlServerChangeEventSourceCoordinator extends ChangeEventSourceCoor
                                                  Clock clock) {
         super(previousOffsets, errorHandler, connectorType, connectorConfig, changeEventSourceFactory,
                 changeEventSourceMetricsFactory, eventDispatcher, schema);
+        this.streamingIterationCompleted = new AtomicReference<>();
         this.clock = clock;
         this.pollInterval = connectorConfig.getPollInterval();
+    }
+
+    public boolean streamingIterationCompleted() {
+        return streamingIterationCompleted.get() != null;
     }
 
     @Override
@@ -104,6 +111,8 @@ public class SqlServerChangeEventSourceCoordinator extends ChangeEventSourceCoor
             if (!streamedEvents) {
                 metronome.pause();
             }
+
+            streamingIterationCompleted.compareAndSet(null, true);
         }
 
         LOGGER.info("Finished streaming");
