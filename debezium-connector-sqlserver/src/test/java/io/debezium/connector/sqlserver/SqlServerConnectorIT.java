@@ -2610,10 +2610,26 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
     }
 
     @Test
-    public void shouldStopRetriableRestartsAtConfiguredMaximum() throws Exception {
+    public void shouldStopRetriableRestartsAtConfiguredMaximumDuringSnapshot() throws Exception {
+        shouldStopRetriableRestartsAtConfiguredMaximum(() -> {
+            connection.execute("ALTER DATABASE " + TestHelper.TEST_DATABASE_2 + " SET OFFLINE");
+            TestHelper.waitForDatabaseSnapshotToBeCompleted(TestHelper.TEST_DATABASE_1);
+        });
+    }
+
+    @Test
+    public void shouldStopRetriableRestartsAtConfiguredMaximumDuringStreaming() throws Exception {
+        shouldStopRetriableRestartsAtConfiguredMaximum(() -> {
+            TestHelper.waitForStreamingStarted();
+            connection.execute("ALTER DATABASE " + TestHelper.TEST_DATABASE_2
+                    + " SET OFFLINE WITH ROLLBACK IMMEDIATE");
+        });
+    }
+
+    private void shouldStopRetriableRestartsAtConfiguredMaximum(SqlRunnable scenario) throws Exception {
         TestHelper.createTestDatabases(TestHelper.TEST_DATABASE_1, TestHelper.TEST_DATABASE_2);
         final Configuration config1 = TestHelper.defaultConnectorConfig()
-                .with(SqlServerConnectorConfig.DATABASE_NAMES.name(), TestHelper.TEST_DATABASE_1 + "," + TestHelper.TEST_DATABASE_2 + ",non-existing-database")
+                .with(SqlServerConnectorConfig.DATABASE_NAMES.name(), TestHelper.TEST_DATABASE_1 + "," + TestHelper.TEST_DATABASE_2)
                 .with("retriable.restart.connector.max.num", 1)
                 .build();
         final LogInterceptor logInterceptor = new LogInterceptor(BaseSourceTask.class);
@@ -2621,8 +2637,7 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
         try {
             start(SqlServerConnector.class, config1);
             assertConnectorIsRunning();
-            connection.execute("ALTER DATABASE " + TestHelper.TEST_DATABASE_2 + " SET OFFLINE");
-            TestHelper.waitForDatabaseSnapshotToBeCompleted(TestHelper.TEST_DATABASE_1);
+            scenario.run();
 
             final String message1 = "1 of 1 retriable restarts will be attempted";
             final String message2 = "The maximum number of retriable restarts: 1 has been attempted";
@@ -2716,5 +2731,10 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
         public boolean skipUnparseableDdlStatements() {
             return false;
         }
+    }
+
+    @FunctionalInterface
+    interface SqlRunnable {
+        void run() throws SQLException;
     }
 }
