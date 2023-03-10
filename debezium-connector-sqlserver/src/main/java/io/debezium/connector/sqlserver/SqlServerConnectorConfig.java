@@ -297,6 +297,14 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     public static final Field SOURCE_INFO_STRUCT_MAKER = CommonConnectorConfig.SOURCE_INFO_STRUCT_MAKER
             .withDefault(SqlServerSourceInfoStructMaker.class.getName());
 
+    public static final Field DATABASE_CALLBACKS = Field.create("database.callbacks")
+            .withDisplayName("Database Callbacks")
+            .withDefault(false)
+            .withType(Type.BOOLEAN)
+            .withImportance(Importance.LOW)
+            .withValidation(Field::isBoolean)
+            .withDescription("This property can be used to enable/disable performing database callbacks during snapshot or streaming.");
+
     private static final ConfigDefinition CONFIG_DEFINITION = HistorizedRelationalDatabaseConnectorConfig.CONFIG_DEFINITION.edit()
             .name("SQL Server")
             .type(
@@ -310,6 +318,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
                     SNAPSHOT_MODE,
                     SNAPSHOT_ISOLATION_MODE,
                     MAX_TRANSACTIONS_PER_ITERATION,
+                    DATABASE_CALLBACKS,
                     BINARY_HANDLING_MODE,
                     SCHEMA_NAME_ADJUSTMENT_MODE,
                     INCREMENTAL_SNAPSHOT_OPTION_RECOMPILE,
@@ -337,6 +346,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     private final boolean readOnlyDatabaseConnection;
     private final int maxTransactionsPerIteration;
     private final boolean optionRecompile;
+    private final boolean optionDatabaseCallbacks;
 
     public SqlServerConnectorConfig(Configuration config) {
         super(
@@ -376,6 +386,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
         }
 
         this.optionRecompile = config.getBoolean(INCREMENTAL_SNAPSHOT_OPTION_RECOMPILE);
+        this.optionDatabaseCallbacks = config.getBoolean(DATABASE_CALLBACKS);
     }
 
     public List<String> getDatabaseNames() {
@@ -409,6 +420,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
     public SnapshotIsolationMode getSnapshotIsolationMode() {
         return this.snapshotIsolationMode;
+    }
+
+    public boolean getOptionDatabaseCallbacks() {
+        return optionDatabaseCallbacks;
     }
 
     public SnapshotMode getSnapshotMode() {
