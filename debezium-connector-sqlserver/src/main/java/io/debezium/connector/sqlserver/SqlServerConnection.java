@@ -53,7 +53,7 @@ public class SqlServerConnection extends JdbcConnection {
 
     public static final String INSTANCE_NAME = "instance";
 
-    private static final String GET_DATABASE_NAME = "SELECT name FROM sys.databases WHERE name = ?";
+    private static final String GET_DATABASE_METADATA = "WITH names AS (SELECT * FROM (VALUES #) AS names(name)) SELECT n.name, d.name, d.state, d.state_desc FROM names n LEFT JOIN sys.databases d ON d.name = n.name";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SqlServerConnection.class);
 
@@ -102,6 +102,7 @@ public class SqlServerConnection extends JdbcConnection {
     private static final String GET_NEW_CHANGE_TABLES = "SELECT * FROM [#db].cdc.change_tables WHERE start_lsn BETWEEN ? AND ?";
     private static final String OPENING_QUOTING_CHARACTER = "[";
     private static final String CLOSING_QUOTING_CHARACTER = "]";
+    private static final String COMPLETE_READING_FROM_CAPTURE_INSTANCE = "EXEC [#db].dbo.DebeziumSQLConnector_CompletedReadingFromCaptureInstance @CaptureInstanceName = ?, @StartLSN = ?, @StopLSN = ?";
 
     private static final String URL_PATTERN = "jdbc:sqlserver://${" + JdbcConfiguration.HOSTNAME + "}";
 
@@ -536,21 +537,55 @@ public class SqlServerConnection extends JdbcConnection {
     }
 
     /**
-     * Retrieve the name of the database in the original case as it's defined on the server.
+     * Retrieve the names of the existing online databases in the original case as they are defined on the server.
      *
      * Although SQL Server supports case-insensitive collations, the connector uses the database name to build the
      * produced records' source info and, subsequently, the keys of its committed offset messages. This value
      * must remain the same during the lifetime of the connector regardless of the case used in the connector
      * configuration.
      */
-    public String retrieveRealDatabaseName(String databaseName) {
+    public List<String> retrieveRealOnlineDatabaseNames(List<String> databaseNames) {
+        if (databaseNames.isEmpty()) {
+            return databaseNames;
+        }
+
+        String placeholders = databaseNames.stream()
+                .map(x -> "(?)")
+                .collect(Collectors.joining(", "));
+
+        String query = GET_DATABASE_METADATA.replace(STATEMENTS_PLACEHOLDER, placeholders);
+
         try {
-            return prepareQueryAndMap(GET_DATABASE_NAME,
-                    ps -> ps.setString(1, databaseName),
-                    singleResultMapper(rs -> rs.getString(1), "Could not retrieve exactly one database name"));
+            return prepareQueryAndMap(query,
+                    ps -> {
+                        int index = 1;
+                        for (String databaseName : databaseNames) {
+                            ps.setString(index++, databaseName);
+                        }
+                    },
+                    rs -> {
+                        List<String> result = new ArrayList<>();
+                        while (rs.next()) {
+                            final String name = rs.getString(1);
+                            final String realName = rs.getString(2);
+                            if (realName == null) {
+                                LOGGER.warn("Database {} does not exist", name);
+                                continue;
+                            }
+
+                            final int state = rs.getInt(3);
+                            if (state != 0) {
+                                LOGGER.warn("Database {} is not online (state_desc = {})", realName, rs.getString(4));
+                                continue;
+                            }
+
+                            result.add(realName);
+                        }
+                        return result;
+                    });
         }
         catch (SQLException e) {
-            throw new RuntimeException("Couldn't obtain database name", e);
+            throw new RuntimeException("Couldn't retrieve real database names", e);
         }
     }
 
@@ -630,5 +665,15 @@ public class SqlServerConnection extends JdbcConnection {
     public Optional<Instant> getCurrentTimestamp() throws SQLException {
         return queryAndMap("SELECT SYSDATETIMEOFFSET()",
                 rs -> rs.next() ? Optional.of(rs.getObject(1, OffsetDateTime.class).toInstant()) : Optional.empty());
+    }
+
+    public void completeReadingFromCaptureInstance(String databaseName, SqlServerChangeTable table) throws SQLException {
+        final String query = replaceDatabaseNamePlaceholder(COMPLETE_READING_FROM_CAPTURE_INSTANCE, databaseName);
+        prepareUpdate(query, ps -> {
+            LOGGER.trace("Calling CompletedReadingFromCaptureInstance stored procedure with change table: {}", table);
+            ps.setString(1, table.getCaptureInstance());
+            ps.setString(2, table.getStartLsn().toString());
+            ps.setString(3, table.getStopLsn().toString());
+        });
     }
 }

@@ -12,10 +12,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -87,6 +90,7 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
 
     private final ElapsedTimeStrategy pauseBetweenCommits;
     private final Map<SqlServerPartition, SqlServerStreamingExecutionContext> streamingExecutionContexts;
+    private final Map<SqlServerPartition, Set<SqlServerChangeTable>> changeTablesWithKnownStopLsn = new HashMap<>();
 
     private boolean checkAgent;
     private SqlServerOffsetContext effectiveOffset;
@@ -173,11 +177,11 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             }
                         }
                         catch (SQLException e) {
-                            LOGGER.warn("No maximum LSN recorded in the database; this may happen if there are no changes recorded in the change table yet or " +
+                            LOGGER.debug("No maximum LSN recorded in the database; this may happen if there are no changes recorded in the change table yet or " +
                                     "low activity database where the cdc clean up job periodically clears entries from the cdc tables. " +
                                     "Otherwise, this may be an indication that the SQL Server Agent is not running. " +
                                     "You should follow the documentation on how to configure SQL Server Agent running status query.");
-                            LOGGER.warn("Cannot query the status of the SQL Server Agent", e);
+                            LOGGER.debug("Cannot query the status of the SQL Server Agent", e);
                         }
                         checkAgent = false;
                     }
@@ -211,10 +215,18 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
                             schemaChangeCheckpoints.add(table);
                         }
                     }
+
+                    collectChangeTablesWithKnownStopLsn(partition, tables);
                 }
                 if (tablesSlot.get() == null) {
                     tablesSlot.set(getChangeTablesToQuery(partition, offsetContext, toLsn));
+                    collectChangeTablesWithKnownStopLsn(partition, tablesSlot.get());
                 }
+
+                tablesSlot.set(Arrays.stream(tablesSlot.get())
+                        .filter(t -> !t.getStopLsn().isAvailable() || t.getStopLsn().compareTo(fromLsn) > 0)
+                        .toArray(SqlServerChangeTable[]::new));
+
                 try {
                     dataConnection.getChangesForTables(databaseName, tablesSlot.get(), fromLsn, toLsn, resultSets -> {
 
@@ -350,6 +362,25 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
         return effectiveOffset;
     }
 
+    private void collectChangeTablesWithKnownStopLsn(SqlServerPartition partition, SqlServerChangeTable[] tables) {
+        if (!connectorConfig.getOptionDatabaseCallbacks()) {
+            return;
+        }
+
+        for (SqlServerChangeTable table : tables) {
+            if (table.getStopLsn().isAvailable()) {
+                synchronized (changeTablesWithKnownStopLsn) {
+                    if (!changeTablesWithKnownStopLsn.containsKey(partition)) {
+                        changeTablesWithKnownStopLsn.put(partition, new HashSet<>());
+                    }
+
+                    LOGGER.info("The stop lsn of {} change table became known", table);
+                    changeTablesWithKnownStopLsn.get(partition).add(table);
+                }
+            }
+        }
+    }
+
     private void commitTransaction() throws SQLException {
         // When reading from read-only Always On replica the default and only transaction isolation
         // is snapshot. This means that CDC metadata are not visible for long-running transactions.
@@ -482,5 +513,42 @@ public class SqlServerStreamingChangeEventSource implements StreamingChangeEvent
         }
 
         return connection.getNthTransactionLsnFromLast(databaseName, fromLsn, maxTransactionsPerIteration);
+    }
+
+    @Override
+    public void commitOffset(Map<String, ?> sourcePartition, Map<String, ?> offset) {
+        if (!connectorConfig.getOptionDatabaseCallbacks()) {
+            return;
+        }
+
+        Lsn commitLsn = Lsn.valueOf((String) offset.get("commit_lsn"));
+        synchronized (changeTablesWithKnownStopLsn) {
+            Optional<SqlServerPartition> optionalPartition = changeTablesWithKnownStopLsn.keySet().stream()
+                    .filter(p -> p.getSourcePartition().equals(sourcePartition))
+                    .findFirst();
+
+            if (!optionalPartition.isPresent()) {
+                return;
+            }
+
+            SqlServerPartition partition = optionalPartition.get();
+            Set<SqlServerChangeTable> partitionTables = changeTablesWithKnownStopLsn.get(partition);
+
+            List<SqlServerChangeTable> changeTablesToBeDeleted = partitionTables.stream()
+                    .filter(t -> t.getStopLsn().compareTo(commitLsn) < 0)
+                    .collect(Collectors.toList());
+
+            for (SqlServerChangeTable table : changeTablesToBeDeleted) {
+                try {
+                    metadataConnection.completeReadingFromCaptureInstance(partition.getDatabaseName(), table);
+                    metadataConnection.commit();
+                }
+                catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+                partitionTables.remove(table);
+                LOGGER.info("Deleted change table {} as the committed change lsn ({}) is greater than the table's stop lsn", table, offset);
+            }
+        }
     }
 }

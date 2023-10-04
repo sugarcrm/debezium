@@ -71,6 +71,10 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
     private List<Map<String, String>> buildTaskConfigs(SqlServerConnection connection, SqlServerConnectorConfig config,
                                                        int maxTasks) {
         List<String> databaseNames = config.getDatabaseNames();
+        final List<String> realDatabaseNames = connection.retrieveRealOnlineDatabaseNames(databaseNames);
+        if (realDatabaseNames.isEmpty()) {
+            throw new IllegalArgumentException();
+        }
 
         // Initialize the database list for each task
         List<List<String>> databasesByTask = new ArrayList<>();
@@ -80,10 +84,9 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
         }
 
         // Add each database to a task list via round-robin.
-        for (int databaseNameIndex = 0; databaseNameIndex < databaseNames.size(); databaseNameIndex++) {
+        for (int databaseNameIndex = 0; databaseNameIndex < realDatabaseNames.size(); databaseNameIndex++) {
             int taskIndex = databaseNameIndex % numTasks;
-            String realDatabaseName = connection.retrieveRealDatabaseName(databaseNames.get(databaseNameIndex));
-            databasesByTask.get(taskIndex).add(realDatabaseName);
+            databasesByTask.get(taskIndex).add(realDatabaseNames.get(databaseNameIndex));
         }
 
         // Create a task config for each task, assigning each a list of database names.
@@ -122,22 +125,6 @@ public class SqlServerConnector extends RelationalBaseSourceConnector {
             connection.execute("SELECT @@VERSION");
             LOGGER.debug("Successfully tested connection for {} with user '{}'", connection.connectionString(),
                     connection.username());
-            LOGGER.info("Checking if user has access to CDC table");
-            if (sqlServerConfig.getSnapshotMode() != SqlServerConnectorConfig.SnapshotMode.INITIAL_ONLY) {
-                final List<String> noAccessDatabaseNames = new ArrayList<>();
-                for (String databaseName : sqlServerConfig.getDatabaseNames()) {
-                    if (!connection.checkIfConnectedUserHasAccessToCDCTable(databaseName)) {
-                        noAccessDatabaseNames.add(databaseName);
-                    }
-                }
-                if (!noAccessDatabaseNames.isEmpty()) {
-                    String errorMessage = String.format(
-                            "User %s does not have access to CDC schema in the following databases: %s. This user can only be used in initial_only snapshot mode",
-                            config.getString(RelationalDatabaseConnectorConfig.USER), String.join(", ", noAccessDatabaseNames));
-                    LOGGER.error(errorMessage);
-                    userValue.addErrorMessage(errorMessage);
-                }
-            }
         }
         catch (Exception e) {
             LOGGER.error("Failed testing connection for {} with user '{}'", config.withMaskedPasswords(),
