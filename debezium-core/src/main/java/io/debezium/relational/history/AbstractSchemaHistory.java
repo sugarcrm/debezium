@@ -41,12 +41,8 @@ public abstract class AbstractSchemaHistory implements SchemaHistory {
 
     protected Configuration config;
     private HistoryRecordComparator comparator = HistoryRecordComparator.INSTANCE;
-    private boolean skipUnparseableDDL;
-    private Predicate<String> ddlFilter = x -> false;
     private SchemaHistoryListener listener = SchemaHistoryListener.NOOP;
     private boolean useCatalogBeforeSchema;
-    private boolean preferDdl = false;
-    private final TableChangesSerializer<Array> tableChangesSerializer = new JsonTableChangeSerializer();
 
     protected AbstractSchemaHistory() {
     }
@@ -55,13 +51,9 @@ public abstract class AbstractSchemaHistory implements SchemaHistory {
     public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
         this.config = config;
         this.comparator = comparator != null ? comparator : HistoryRecordComparator.INSTANCE;
-        this.skipUnparseableDDL = config.getBoolean(SKIP_UNPARSEABLE_DDL_STATEMENTS);
 
-        final String ddlFilter = config.getString(DDL_FILTER);
-        this.ddlFilter = (ddlFilter != null) ? Predicates.includes(ddlFilter, Pattern.CASE_INSENSITIVE | Pattern.DOTALL) : (x -> false);
         this.listener = listener;
         this.useCatalogBeforeSchema = useCatalogBeforeSchema;
-        this.preferDdl = config.getBoolean(INTERNAL_PREFER_DDL);
     }
 
     @Override
@@ -88,72 +80,11 @@ public abstract class AbstractSchemaHistory implements SchemaHistory {
     @Override
     public void recover(Map<Map<String, ?>, Map<String, ?>> offsets, Tables schema, DdlParser ddlParser) {
         listener.recoveryStarted();
-        Map<Document, HistoryRecord> stopPoints = new HashMap<>();
-        offsets.forEach((Map<String, ?> source, Map<String, ?> position) -> {
-            Document srcDocument = Document.create();
-            if (source != null) {
-                source.forEach(srcDocument::set);
-            }
-            stopPoints.put(srcDocument, new HistoryRecord(source, position, null, null, null, null, null));
-        });
-
-        recoverRecords(recovered -> {
-            listener.onChangeFromHistory(recovered);
-            Document srcDocument = recovered.document().getDocument(HistoryRecord.Fields.SOURCE);
-            if (stopPoints.containsKey(srcDocument) && comparator.isAtOrBefore(recovered, stopPoints.get(srcDocument))) {
-                Array tableChanges = recovered.tableChanges();
-                String ddl = recovered.ddl();
-
-                if (!preferDdl && tableChanges != null && !tableChanges.isEmpty()) {
-                    TableChanges changes = tableChangesSerializer.deserialize(tableChanges, useCatalogBeforeSchema);
-                    for (TableChange entry : changes) {
-                        if (entry.getType() == TableChangeType.CREATE) {
-                            schema.overwriteTable(entry.getTable());
-                        }
-                        else if (entry.getType() == TableChangeType.ALTER) {
-                            if (entry.getPreviousId() != null) {
-                                schema.removeTable(entry.getPreviousId());
-                            }
-                            schema.overwriteTable(entry.getTable());
-                        }
-                        // DROP
-                        else {
-                            schema.removeTable(entry.getId());
-                        }
-                    }
-                    listener.onChangeApplied(recovered);
-                }
-                else if (ddl != null && ddlParser != null) {
-                    if (recovered.databaseName() != null) {
-                        ddlParser.setCurrentDatabase(recovered.databaseName()); // may be null
-                    }
-                    if (recovered.schemaName() != null) {
-                        ddlParser.setCurrentSchema(recovered.schemaName()); // may be null
-                    }
-                    if (ddlFilter.test(ddl)) {
-                        logger.info("a DDL '{}' was filtered out of processing by regular expression '{}'", ddl,
-                                config.getString(DDL_FILTER));
-                        return;
-                    }
-                    try {
-                        logger.debug("Applying: {}", ddl);
-                        ddlParser.parse(ddl, schema);
-                        listener.onChangeApplied(recovered);
-                    }
-                    catch (final ParsingException | MultipleParsingExceptions e) {
-                        if (skipUnparseableDDL) {
-                            logger.warn("Ignoring unparseable statements '{}' stored in database schema history", ddl, e);
-                        }
-                        else {
-                            throw e;
-                        }
-                    }
-                }
-            }
-            else {
-                logger.debug("Skipping: {}", recovered.ddl());
-            }
-        });
+        final HistoryRecordProcessor recordProcessor = new HistoryRecordProcessor(
+                offsets, schema, ddlParser,
+                config, comparator, listener,
+                useCatalogBeforeSchema);
+        recoverRecords(recordProcessor);
         listener.recoveryStopped();
     }
 

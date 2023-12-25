@@ -120,7 +120,7 @@ public class KafkaSchemaHistoryTest {
     }
 
     private void testHistoryTopicContent(String topicName, boolean skipUnparseableDDL) {
-        interceptor = new LogInterceptor(KafkaSchemaHistory.class);
+        interceptor = new LogInterceptor(HistoryRecordProcessor.class);
         // Start up the history ...
         Configuration config = Configuration.create()
                 .with(KafkaSchemaHistory.BOOTSTRAP_SERVERS, kafka.brokerList())
