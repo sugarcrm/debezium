@@ -67,6 +67,7 @@ import io.debezium.relational.TableId;
 import io.debezium.relational.Tables;
 import io.debezium.relational.ddl.DdlParser;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -2609,7 +2610,7 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
 
         TestHelper.createTestDatabases(TestHelper.TEST_DATABASE_2);
         final Configuration config2 = TestHelper.defaultConfig(
-                TestHelper.TEST_DATABASE_1, TestHelper.TEST_DATABASE_2)
+                        TestHelper.TEST_DATABASE_1, TestHelper.TEST_DATABASE_2)
                 .with(SqlServerConnectorConfig.SNAPSHOT_MODE, SnapshotMode.INITIAL_ONLY)
                 .build();
         start(SqlServerConnector.class, config2);
@@ -2907,8 +2908,8 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
 
         @Override
         public void configure(Configuration config, HistoryRecordComparator comparator,
-                              SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
-            delegate.configure(config, comparator, listener, useCatalogBeforeSchema);
+                              SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
+            delegate.configure(config, comparator, listener, processorProvider);
         }
 
         @Override
@@ -2930,13 +2931,8 @@ public class SqlServerConnectorIT extends AbstractConnectorTest {
         }
 
         @Override
-        public void recover(Offsets<?, ?> offsets, Tables schema, DdlParser ddlParser) {
-            delegate.recover(offsets, schema, ddlParser);
-        }
-
-        @Override
-        public void recover(Map<Map<String, ?>, Map<String, ?>> offsets, Tables schema, DdlParser ddlParser) {
-            delegate.recover(offsets, schema, ddlParser);
+        public void recover(Offsets<?, ?> offsets, Tables schema) {
+            delegate.recover(offsets, schema);
         }
 
         @Override

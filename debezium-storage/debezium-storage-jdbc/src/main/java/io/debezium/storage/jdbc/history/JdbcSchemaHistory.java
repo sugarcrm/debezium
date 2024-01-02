@@ -33,6 +33,7 @@ import io.debezium.document.DocumentWriter;
 import io.debezium.relational.history.AbstractSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -59,12 +60,12 @@ public final class JdbcSchemaHistory extends AbstractSchemaHistory {
     private JdbcSchemaHistoryConfig config;
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
         this.config = new JdbcSchemaHistoryConfig(config);
         if (running.get()) {
             throw new IllegalStateException("Database history already initialized db: " + this.config.getJdbcUrl());
         }
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+        super.configure(config, comparator, listener, processorProvider);
 
         try {
             conn = DriverManager.getConnection(this.config.getJdbcUrl(), this.config.getUser(), this.config.getPassword());

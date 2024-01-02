@@ -131,14 +131,12 @@ public interface SchemaHistory {
      *
      * @param config the configuration for this history store
      * @param comparator the function that should be used to compare history records during
-     *            {@link #recover(Map, Map, Tables, DdlParser) recovery}; may be null if the
+     *            {@link #recover(Offsets, Tables) recovery}; may be null if the
      *            {@link HistoryRecordComparator#INSTANCE default comparator} is to be used
      * @param listener TODO
-     * @param useCatalogBeforeSchema true if the parsed string for a table contains only 2 items and the first should be used as
-                             the catalog and the second as the table name, or false if the first should be used as the schema and the
-                             second as the table name
+     * @param processorProvider TODO
      */
-    void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema);
+    void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider);
 
     /**
      * Start the history.
@@ -150,7 +148,7 @@ public interface SchemaHistory {
      *
      * @param source the information about the source database; may not be null
      * @param position the point in history where these DDL changes were made, which may be used when
-     *            {@link #recover(Map, Map, Tables, DdlParser) recovering} the schema to some point in history; may not be
+     *            {@link #recover(Offsets, Tables) recovering} the schema to some point in history; may not be
      *            null
      * @param databaseName the name of the database whose schema is being changed; may be null
      * @param ddl the DDL statements that describe the changes to the database schema; may not be null
@@ -160,14 +158,6 @@ public interface SchemaHistory {
 
     void record(Map<String, ?> source, Map<String, ?> position, String databaseName, String schemaName, String ddl, TableChanges changes, Instant timestamp)
             throws SchemaHistoryException;
-
-    /**
-     * @deprecated Use {@link #recover(Offsets, Tables, DdlParser)} instead.
-     */
-    @Deprecated
-    default void recover(Map<String, ?> source, Map<String, ?> position, Tables schema, DdlParser ddlParser) {
-        recover(Collections.singletonMap(source, position), schema, ddlParser);
-    }
 
     /**
      * Recover the {@link Tables database schema} to a known point in its history. Note that it is possible to recover the
@@ -180,27 +170,11 @@ public interface SchemaHistory {
      *                which is enforced in {@link HistorizedRelationalDatabaseSchema#recover(Offsets)}
      * @param schema the table definitions that should be changed to reflect the database schema at the desired point in history;
      *            may not be null
-     * @param ddlParser the DDL parser that can be used to apply DDL statements to the given {@code schema}; may not be null
      */
-    default void recover(Offsets<?, ?> offsets, Tables schema, DdlParser ddlParser) {
-        Map<Map<String, ?>, Map<String, ?>> offsetMap = new HashMap<>();
-        for (Entry<? extends Partition, ? extends OffsetContext> entry : offsets) {
-            if (entry.getValue() != null) {
-                offsetMap.put(entry.getKey().getSourcePartition(), entry.getValue().getOffset());
-            }
-        }
-
-        recover(offsetMap, schema, ddlParser);
-    }
+    void recover(Offsets<?, ?> offsets, Tables schema);
 
     /**
-     * @deprecated Use {@link #recover(Offsets, Tables, DdlParser)} instead.
-     */
-    @Deprecated
-    void recover(Map<Map<String, ?>, Map<String, ?>> offsets, Tables schema, DdlParser ddlParser);
-
-    /**
-     * Stop recording history and release any resources acquired since {@link #configure(Configuration, HistoryRecordComparator, SchemaHistoryListener, boolean)}.
+     * Stop recording history and release any resources acquired since {@link #configure(Configuration, HistoryRecordComparator, SchemaHistoryListener, HistoryRecordProcessorProvider)}.
      */
     void stop();
 

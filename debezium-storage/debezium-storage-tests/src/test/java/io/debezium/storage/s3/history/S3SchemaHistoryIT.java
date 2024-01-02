@@ -29,9 +29,13 @@ import com.adobe.testing.s3mock.testcontainers.S3MockContainer;
 import io.debezium.config.Configuration;
 import io.debezium.document.DocumentReader;
 import io.debezium.relational.history.AbstractSchemaHistoryTest;
+import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessor;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.HistoryRecord;
-import io.debezium.relational.history.SchemaHistory;
+import io.debezium.relational.history.SchemaHistoryMetrics;
 import io.debezium.relational.history.SchemaHistoryListener;
+import io.debezium.relational.history.SchemaHistory;
 
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -80,6 +84,7 @@ public class S3SchemaHistoryIT extends AbstractSchemaHistoryTest {
     @Override
     protected SchemaHistory createHistory() {
         SchemaHistory history = new S3SchemaHistory();
+
         Configuration config = Configuration.create()
                 .with(S3SchemaHistory.ACCESS_KEY_ID, "aa")
                 .with(S3SchemaHistory.SECRET_ACCESS_KEY, "bb")
@@ -88,8 +93,13 @@ public class S3SchemaHistoryIT extends AbstractSchemaHistoryTest {
                 .with(S3SchemaHistory.REGION_CONFIG, Region.AWS_GLOBAL.id())
                 .with(S3SchemaHistory.ENDPOINT_CONFIG, container.getHttpEndpoint())
                 .build();
-        history.configure(config, null, SchemaHistoryListener.NOOP, true);
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, parser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
+
         return history;
     }
 

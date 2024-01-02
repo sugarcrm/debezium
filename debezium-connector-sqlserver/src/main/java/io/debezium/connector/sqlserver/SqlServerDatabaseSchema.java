@@ -13,7 +13,6 @@ import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
 import io.debezium.relational.TableSchemaBuilder;
 import io.debezium.relational.ValueConverterProvider;
-import io.debezium.relational.ddl.DdlParser;
 import io.debezium.relational.history.TableChanges;
 import io.debezium.schema.SchemaChangeEvent;
 import io.debezium.schema.SchemaChangeEvent.SchemaChangeEventType;
@@ -41,7 +40,7 @@ public class SqlServerDatabaseSchema extends HistorizedRelationalDatabaseSchema 
                         connectorConfig.getSourceInfoStructMaker().schema(),
                         connectorConfig.getFieldNamer(),
                         true),
-                false, connectorConfig.getKeyMapper());
+                false, connectorConfig.getKeyMapper(), null);
     }
 
     @Override
@@ -65,10 +64,4 @@ public class SqlServerDatabaseSchema extends HistorizedRelationalDatabaseSchema 
 
         record(schemaChange, tableChanges);
     }
-
-    @Override
-    protected DdlParser getDdlParser() {
-        return null;
-    }
-
 }

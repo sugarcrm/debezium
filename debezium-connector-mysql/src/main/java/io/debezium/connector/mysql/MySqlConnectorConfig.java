@@ -34,6 +34,7 @@ import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.TableId;
 import io.debezium.relational.Tables.TableFilter;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.snapshot.SchemaPartitioner;
 import io.debezium.schema.DefaultTopicNamingStrategy;
 import io.debezium.util.Collect;
 
@@ -382,10 +383,10 @@ public class MySqlConnectorConfig extends HistorizedRelationalDatabaseConnectorC
         }
 
         /**
-        * Determine which flavour of MySQL locking to use.
-        *
-        * @return the correct SQL to obtain a global lock for the current mode
-        */
+         * Determine which flavour of MySQL locking to use.
+         *
+         * @return the correct SQL to obtain a global lock for the current mode
+         */
         public String getLockStatement() {
             if (value.equals(MINIMAL_PERCONA.value)) {
                 return "LOCK TABLES FOR BACKUP";
@@ -1162,6 +1163,11 @@ public class MySqlConnectorConfig extends HistorizedRelationalDatabaseConnectorC
     @Override
     protected HistoryRecordComparator getHistoryRecordComparator() {
         return new MySqlHistoryRecordComparator(gtidSourceFilter());
+    }
+
+    @Override
+    protected SchemaPartitioner getSchemaPartitioner() {
+        return SchemaPartitioner.SINGLE_PARTITION;
     }
 
     public static boolean isBuiltInDatabase(String databaseName) {

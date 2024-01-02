@@ -39,7 +39,6 @@ public class OracleDatabaseSchema extends HistorizedRelationalDatabaseSchema {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OracleDatabaseSchema.class);
 
-    private final OracleDdlParser ddlParser;
     private final ConcurrentMap<TableId, List<Column>> lobColumnsByTableId = new ConcurrentHashMap<>();
     private final OracleValueConverters valueConverters;
 
@@ -59,15 +58,15 @@ public class OracleDatabaseSchema extends HistorizedRelationalDatabaseSchema {
                         connectorConfig.getFieldNamer(),
                         false),
                 TableNameCaseSensitivity.INSENSITIVE.equals(tableNameCaseSensitivity),
-                connectorConfig.getKeyMapper());
+                connectorConfig.getKeyMapper(),
+                new OracleDdlParser(
+                        true,
+                        false,
+                        connectorConfig.isSchemaCommentsHistoryEnabled(),
+                        valueConverters,
+                        connectorConfig.getTableFilters().dataCollectionFilter()));
 
         this.valueConverters = valueConverters;
-        this.ddlParser = new OracleDdlParser(
-                true,
-                false,
-                connectorConfig.isSchemaCommentsHistoryEnabled(),
-                valueConverters,
-                connectorConfig.getTableFilters().dataCollectionFilter());
     }
 
     public Tables getTables() {
@@ -78,9 +77,8 @@ public class OracleDatabaseSchema extends HistorizedRelationalDatabaseSchema {
         return valueConverters;
     }
 
-    @Override
     public OracleDdlParser getDdlParser() {
-        return ddlParser;
+        return (OracleDdlParser)ddlParser;
     }
 
     @Override

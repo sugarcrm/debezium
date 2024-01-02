@@ -32,6 +32,10 @@ public class HistoryRecord {
         this.doc = document;
     }
 
+    public HistoryRecord(Map<String, ?> source, Map<String, ?> position) {
+        this(source, position, null, null, null, null, null);
+    }
+
     public HistoryRecord(Map<String, ?> source, Map<String, ?> position, String databaseName, String schemaName,
                          String ddl, TableChanges changes, Instant timestamp) {
         this.doc = Document.create();

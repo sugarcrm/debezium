@@ -20,9 +20,16 @@ import io.debezium.config.Field;
 import io.debezium.function.Predicates;
 import io.debezium.relational.Selectors.TableIdToStringMapper;
 import io.debezium.relational.Tables.TableFilter;
+import io.debezium.relational.ddl.DdlParser;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessor;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
+import io.debezium.relational.history.SchemaHistoryListener;
 import io.debezium.relational.history.SchemaHistoryMetrics;
+import io.debezium.relational.history.SnapshotAwareSchemaHistory;
+import io.debezium.relational.history.snapshot.SchemaHistorySnapshot;
+import io.debezium.relational.history.snapshot.SchemaPartitioner;
 
 /**
  * Configuration options shared across the relational CDC connectors which use a persistent database schema history.
@@ -34,6 +41,7 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
     protected static final int DEFAULT_SNAPSHOT_FETCH_SIZE = 2_000;
 
     private static final String DEFAULT_SCHEMA_HISTORY = "io.debezium.storage.kafka.history.KafkaSchemaHistory";
+    private static final String DEFAULT_SCHEMA_HISTORY_SNAPSHOT = "io.debezium.relational.history.snapshot.NoopSchemaHistorySnapshot";
 
     private final boolean useCatalogBeforeSchema;
     private final Class<? extends SourceConnector> connectorClass;
@@ -58,6 +66,17 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
                     + SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + "' string.")
             .withDefault(DEFAULT_SCHEMA_HISTORY);
 
+    public static final Field SCHEMA_HISTORY_SNAPSHOT = Field.create("schema.history.internal.snapshot")
+            .withDisplayName("Database schema history snapshot class")
+            .withType(Type.CLASS)
+            .withWidth(Width.LONG)
+            .withImportance(Importance.LOW)
+            .withInvisibleRecommender()
+            .withDescription("The name of the SchemaHistorySnapshot class that should be used to store and recover database schema. "
+                    + "The configuration properties for the history snapshot are prefixed with the '"
+                    + SchemaHistorySnapshot.CONFIGURATION_FIELD_PREFIX_STRING + "' string.")
+            .withDefault(DEFAULT_SCHEMA_HISTORY_SNAPSHOT);
+
     public static final Field SKIP_UNPARSEABLE_DDL_STATEMENTS = SchemaHistory.SKIP_UNPARSEABLE_DDL_STATEMENTS;
 
     public static final Field STORE_ONLY_CAPTURED_TABLES_DDL = SchemaHistory.STORE_ONLY_CAPTURED_TABLES_DDL;
@@ -69,7 +88,8 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
                     SCHEMA_HISTORY,
                     SKIP_UNPARSEABLE_DDL_STATEMENTS,
                     STORE_ONLY_CAPTURED_TABLES_DDL,
-                    STORE_ONLY_CAPTURED_DATABASES_DDL)
+                    STORE_ONLY_CAPTURED_DATABASES_DDL,
+                    SCHEMA_HISTORY_SNAPSHOT)
             .create();
 
     protected HistorizedRelationalDatabaseConnectorConfig(Class<? extends SourceConnector> connectorClass,
@@ -115,7 +135,7 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
     /**
      * Returns a configured (but not yet started) instance of the database schema history.
      */
-    public SchemaHistory getSchemaHistory() {
+    public SchemaHistory getSchemaHistory(DdlParser ddlParser) {
         Configuration config = getConfig();
 
         SchemaHistory schemaHistory = config.getInstance(SCHEMA_HISTORY, SchemaHistory.class);
@@ -133,9 +153,23 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
                 .withDefault(SchemaHistory.INTERNAL_CONNECTOR_ID, logicalName)
                 .build();
 
+        SchemaHistorySnapshot schemaSnapshot = config.getInstance(SCHEMA_HISTORY_SNAPSHOT, SchemaHistorySnapshot.class);
+        if (schemaSnapshot == null) {
+            throw new ConnectException("Unable to instantiate the database schema history snapshot class " +
+                    config.getString(SCHEMA_HISTORY_SNAPSHOT));
+        }
+
+        Configuration schemaHistorySnapshotConfig = config.subset(SchemaHistorySnapshot.CONFIGURATION_FIELD_PREFIX_STRING, false);
+
         HistoryRecordComparator historyComparator = getHistoryRecordComparator();
-        schemaHistory.configure(schemaHistoryConfig, historyComparator,
-                new SchemaHistoryMetrics(this, multiPartitionMode()), useCatalogBeforeSchema()); // validates
+        SchemaHistoryListener historyListener = new SchemaHistoryMetrics(this, multiPartitionMode());
+        schemaSnapshot.configure(schemaHistorySnapshotConfig, historyComparator, getSchemaPartitioner());
+
+        schemaHistory = new SnapshotAwareSchemaHistory(schemaHistory, schemaSnapshot);
+
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, ddlParser, schemaHistoryConfig, historyComparator, historyListener,
+                useCatalogBeforeSchema());
+        schemaHistory.configure(schemaHistoryConfig, historyComparator, historyListener, processorProvider); // validates
 
         return schemaHistory;
     }
@@ -177,4 +211,5 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
      */
     protected abstract HistoryRecordComparator getHistoryRecordComparator();
 
+    protected abstract SchemaPartitioner getSchemaPartitioner();
 }

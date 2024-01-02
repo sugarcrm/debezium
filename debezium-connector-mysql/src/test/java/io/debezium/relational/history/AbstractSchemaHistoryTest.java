@@ -9,14 +9,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 import java.util.Map;
+import java.time.Instant;
+
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Struct;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import io.debezium.connector.SnapshotRecord;
+import io.debezium.connector.mysql.MySqlPartition;
+import io.debezium.connector.mysql.SourceInfo;
 import io.debezium.connector.mysql.antlr.MySqlAntlrDdlParser;
+import io.debezium.pipeline.spi.OffsetContext;
+import io.debezium.pipeline.spi.Offsets;
+import io.debezium.pipeline.txmetadata.TransactionContext;
 import io.debezium.relational.Tables;
 import io.debezium.relational.ddl.DdlParser;
+import io.debezium.spi.schema.DataCollectionId;
 import io.debezium.util.Collect;
 import io.debezium.util.Testing;
 
@@ -26,30 +37,22 @@ import io.debezium.util.Testing;
  */
 public abstract class AbstractSchemaHistoryTest {
 
+    private static String SERVER_NAME = "server1";
+    private static String BINLOG_FILE = "a.log";
+
     protected SchemaHistory history;
-    protected Map<String, Object> source1;
-    protected Map<String, Object> source2;
-    protected Tables tables;
-    protected Tables t0;
-    protected Tables t1;
-    protected Tables t2;
-    protected Tables t3;
-    protected Tables t4;
-    protected Tables all;
+    protected Tables t0, t1, t2, t3, t4, all;
     protected DdlParser parser;
 
     @Before
     public void beforeEach() {
         parser = new MySqlAntlrDdlParser();
-        tables = new Tables();
         t0 = new Tables();
         t1 = new Tables();
         t2 = new Tables();
         t3 = new Tables();
         t4 = new Tables();
         all = new Tables();
-        source1 = server("abc");
-        source2 = server("xyz");
         history = createHistory();
     }
 
@@ -62,17 +65,24 @@ public abstract class AbstractSchemaHistoryTest {
 
     protected abstract SchemaHistory createHistory();
 
-    protected Map<String, Object> server(String serverName) {
-        return Collect.linkMapOf("server", serverName);
+    protected MySqlPartition source(String server) {
+        return new MySqlPartition(server, "");
     }
 
-    protected Map<String, Object> position(String filename, long position, int entry) {
-        return Collect.linkMapOf("file", filename, "position", position, "entry", entry);
+    protected Map<String, Object> position(long position, int row) {
+        return Collect.linkMapOf(
+                SourceInfo.BINLOG_FILENAME_OFFSET_KEY, BINLOG_FILE,
+                SourceInfo.BINLOG_POSITION_OFFSET_KEY, position,
+                SourceInfo.BINLOG_ROW_IN_EVENT_OFFSET_KEY, row);
     }
 
-    protected void record(long pos, int entry, String ddl, Tables... update) {
+    protected Offsets<?, ?> offsets(String server, long pos, int row) {
+        return Offsets.of(source(server), new TestOffsetContext(position(pos, row)));
+    }
+
+    protected void record(long pos, int row, String ddl, Tables... update) {
         try {
-            history.record(source1, position("a.log", pos, entry), "db", ddl);
+            history.record(source(SERVER_NAME).getSourcePartition(), position(pos, row), "db", ddl);
         }
         catch (Throwable t) {
             fail(t.getMessage());
@@ -85,15 +95,15 @@ public abstract class AbstractSchemaHistoryTest {
         }
     }
 
-    protected Tables recover(long pos, int entry) {
+    protected Tables recover(long pos, int row) {
         Tables result = new Tables();
-        history.recover(source1, position("a.log", pos, entry), result, parser);
+        history.recover(offsets(SERVER_NAME, pos, row), result);
         return result;
     }
 
     @Test
     public void shouldRecordChangesAndRecoverToVariousPoints() {
-        record(01, 0, "CREATE TABLE foo ( first VARCHAR(22) NOT NULL );", all, t3, t2, t1, t0);
+        record(1, 0,"CREATE TABLE foo ( first VARCHAR(22) NOT NULL );", all, t3, t2, t1, t0);
         record(23, 1, "CREATE TABLE\nperson ( name VARCHAR(22) NOT NULL );", all, t3, t2, t1);
         record(30, 2, "CREATE TABLE address\n( street VARCHAR(22) NOT NULL );", all, t3, t2);
         record(32, 3, "ALTER TABLE address ADD city VARCHAR(22) NOT NULL;", all, t3);
@@ -106,8 +116,8 @@ public abstract class AbstractSchemaHistoryTest {
             Testing.print("t3 = " + t3);
         }
 
-        assertThat(recover(01, 0)).isEqualTo(t0);
-        assertThat(recover(01, 3)).isEqualTo(t0);
+        assertThat(recover(1, 0)).isEqualTo(t0);
+        assertThat(recover(1, 3)).isEqualTo(t0);
         assertThat(recover(10, 1)).isEqualTo(t0);
         assertThat(recover(22, 999999)).isEqualTo(t0);
         assertThat(recover(23, 0)).isEqualTo(t0);
@@ -130,4 +140,61 @@ public abstract class AbstractSchemaHistoryTest {
         assertThat(recover(1033, 4)).isEqualTo(t3);
     }
 
+    private static class TestOffsetContext implements OffsetContext {
+        private final Map<String, ?> offset;
+
+        TestOffsetContext(Map<String, ?> offset) {
+            this.offset = offset;
+        }
+
+        @Override
+        public Map<String, ?> getOffset() {
+            return offset;
+        }
+
+        @Override
+        public Schema getSourceInfoSchema() {
+            return null;
+        }
+
+        @Override
+        public Struct getSourceInfo() {
+            return null;
+        }
+
+        @Override
+        public boolean isSnapshotRunning() {
+            return false;
+        }
+
+        @Override
+        public void markSnapshotRecord(SnapshotRecord record) {
+
+        }
+
+        @Override
+        public void preSnapshotStart() {
+
+        }
+
+        @Override
+        public void preSnapshotCompletion() {
+
+        }
+
+        @Override
+        public void postSnapshotCompletion() {
+
+        }
+
+        @Override
+        public void event(DataCollectionId collectionId, Instant timestamp) {
+
+        }
+
+        @Override
+        public TransactionContext getTransactionContext() {
+            return null;
+        }
+    }
 }

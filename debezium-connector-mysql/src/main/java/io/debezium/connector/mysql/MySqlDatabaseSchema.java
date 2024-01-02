@@ -64,7 +64,6 @@ public class MySqlDatabaseSchema extends HistorizedRelationalDatabaseSchema {
     private final static Logger LOGGER = LoggerFactory.getLogger(MySqlDatabaseSchema.class);
 
     private final Set<String> ignoredQueryStatements = Collect.unmodifiableSet("BEGIN", "END", "FLUSH PRIVILEGES");
-    private final DdlParser ddlParser;
     private final RelationalTableFilters filters;
     private final DdlChanges ddlChanges;
     private final Map<Long, TableId> tableIdsByTableNumber = new ConcurrentHashMap<>();
@@ -88,14 +87,14 @@ public class MySqlDatabaseSchema extends HistorizedRelationalDatabaseSchema {
                         connectorConfig.getSourceInfoStructMaker().schema(),
                         connectorConfig.getFieldNamer(),
                         false),
-                tableIdCaseInsensitive, connectorConfig.getKeyMapper());
+                tableIdCaseInsensitive, connectorConfig.getKeyMapper(),
+                new MySqlAntlrDdlParser(
+                        true,
+                        false,
+                        connectorConfig.isSchemaCommentsHistoryEnabled(),
+                        valueConverter,
+                        connectorConfig.getTableFilters().dataCollectionFilter()));
 
-        this.ddlParser = new MySqlAntlrDdlParser(
-                true,
-                false,
-                connectorConfig.isSchemaCommentsHistoryEnabled(),
-                valueConverter,
-                getTableFilter());
         this.ddlChanges = this.ddlParser.getDdlChanges();
         this.connectorConfig = connectorConfig;
         filters = connectorConfig.getTableFilters();
@@ -352,11 +351,6 @@ public class MySqlDatabaseSchema extends HistorizedRelationalDatabaseSchema {
             return ((TableIndexEvent) event).tableId();
         }
         return null;
-    }
-
-    @Override
-    protected DdlParser getDdlParser() {
-        return ddlParser;
     }
 
     /**

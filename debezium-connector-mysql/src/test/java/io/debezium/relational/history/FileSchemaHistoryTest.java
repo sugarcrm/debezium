@@ -30,10 +30,16 @@ public class FileSchemaHistoryTest extends AbstractSchemaHistoryTest {
     @Override
     protected SchemaHistory createHistory() {
         SchemaHistory history = new FileSchemaHistory();
-        history.configure(Configuration.create()
+        Configuration config = Configuration.create()
                 .with(FileSchemaHistory.FILE_PATH, TEST_FILE_PATH.toAbsolutePath().toString())
-                .build(), null, SchemaHistoryMetrics.NOOP, true);
+                .build();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, parser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
+
         return history;
     }
 }

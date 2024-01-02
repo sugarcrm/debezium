@@ -23,6 +23,7 @@ import io.debezium.config.Field;
 import io.debezium.relational.history.AbstractFileBasedSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -74,8 +75,8 @@ public class AzureBlobSchemaHistory extends AbstractFileBasedSchemaHistory {
     private String blobName;
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
+        super.configure(config, comparator, listener, processorProvider);
         if (!config.validateAndRecord(ALL_FIELDS, LOGGER::error)) {
             throw new DebeziumException(
                     "Error configuring an instance of " + getClass().getSimpleName() + "; check the logs for details");

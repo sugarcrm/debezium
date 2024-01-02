@@ -38,6 +38,7 @@ import io.debezium.relational.HistorizedRelationalDatabaseConnectorConfig;
 import io.debezium.relational.history.AbstractSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -95,7 +96,7 @@ public class RocketMqSchemaHistory extends AbstractSchemaHistory {
             .withDefault(60)
             .withValidation(Field::isInteger);
     public static final Field RECOVERY_POLL_INTERVAL_MS = Field.create(CONFIGURATION_FIELD_PREFIX_STRING
-            + "rocketmq.recovery.poll.interval.ms")
+                    + "rocketmq.recovery.poll.interval.ms")
             .withDisplayName("Poll interval during database schema history recovery (ms)")
             .withType(ConfigDef.Type.INT)
             .withGroup(Field.createGroupEntry(Field.Group.ADVANCED, 1))
@@ -105,7 +106,7 @@ public class RocketMqSchemaHistory extends AbstractSchemaHistory {
             .withDefault(1000)
             .withValidation(Field::isLong);
     public static final Field STORE_RECORD_TIMEOUT_MS = Field.create(CONFIGURATION_FIELD_PREFIX_STRING
-            + "rocketmq.store.record.timeout.ms")
+                    + "rocketmq.store.record.timeout.ms")
             .withDisplayName("Timeout for sending messages to RocketMQ")
             .withType(ConfigDef.Type.INT)
             .withGroup(Field.createGroupEntry(Field.Group.ADVANCED, 1))
@@ -133,8 +134,8 @@ public class RocketMqSchemaHistory extends AbstractSchemaHistory {
     }
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
+        super.configure(config, comparator, listener, processorProvider);
         this.topicName = config.getString(TOPIC);
         this.dbHistoryName = config.getString(SchemaHistory.NAME, UUID.randomUUID().toString());
         this.maxRecoveryAttempts = config.getInteger(RECOVERY_POLL_ATTEMPTS);
@@ -256,7 +257,7 @@ public class RocketMqSchemaHistory extends AbstractSchemaHistory {
                         LOGGER.trace("Recovering database history: {}", recordObj);
                         if (recordObj == null || !recordObj.isValid()) {
                             LOGGER.warn("Skipping invalid database history record '{}'. " +
-                                    "This is often not an issue, but if it happens repeatedly please check the '{}' topic.",
+                                            "This is often not an issue, but if it happens repeatedly please check the '{}' topic.",
                                     recordObj, topicName);
                         }
                         else {

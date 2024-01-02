@@ -24,6 +24,7 @@ import io.debezium.document.DocumentWriter;
 import io.debezium.relational.history.AbstractSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -61,11 +62,11 @@ public class RedisSchemaHistory extends AbstractSchemaHistory {
     }
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
         this.config = new RedisSchemaHistoryConfig(config);
         this.initialRetryDelay = Duration.ofMillis(this.config.getInitialRetryDelay());
         this.maxRetryDelay = Duration.ofMillis(this.config.getMaxRetryDelay());
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+        super.configure(config, comparator, listener, processorProvider);
     }
 
     @Override

@@ -16,21 +16,33 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.Map;
 
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.Struct;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import io.debezium.connector.SnapshotRecord;
 import io.debezium.config.Configuration;
+import io.debezium.pipeline.spi.OffsetContext;
+import io.debezium.pipeline.spi.Offsets;
+import io.debezium.pipeline.txmetadata.TransactionContext;
 import io.debezium.relational.Column;
 import io.debezium.relational.Table;
 import io.debezium.relational.TableId;
 import io.debezium.relational.Tables;
 import io.debezium.relational.ddl.DdlParser;
+import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessor;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.HistoryRecord;
-import io.debezium.relational.history.SchemaHistory;
+import io.debezium.relational.history.SchemaHistoryListener;
 import io.debezium.relational.history.SchemaHistoryMetrics;
+import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.TableChanges;
+import io.debezium.spi.schema.DataCollectionId;
 import io.debezium.util.Collect;
 
 /**
@@ -43,13 +55,13 @@ public class JdbcSchemaHistoryTest {
     static String databaseName = "db";
     static String schemaName = "myschema";
     static String ddl = "CREATE TABLE foo ( first VARCHAR(22) NOT NULL );";
-    static Map<String, Object> source;
-    static Map<String, Object> position;
+    static Map<String, String> source;
+    static Map<String, ?> position;
     static TableId tableId;
     static Table table;
     static TableChanges tableChanges;
     static HistoryRecord historyRecord;
-    static Map<String, Object> position2;
+    static Map<String, ?> position2;
     static TableId tableId2;
     static Table table2;
     static TableChanges tableChanges2;
@@ -96,11 +108,17 @@ public class JdbcSchemaHistoryTest {
     @Before
     public void beforeEach() {
         history = new JdbcSchemaHistory();
-        history.configure(Configuration.create()
+
+        Configuration config = Configuration.create()
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_JDBC_URL.name(), "jdbc:sqlite:" + dbFile)
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_USER.name(), "user")
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_PASSWORD.name(), "pass")
-                .build(), null, SchemaHistoryMetrics.NOOP, true);
+                .build();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, ddlParser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
     }
 
@@ -112,15 +130,26 @@ public class JdbcSchemaHistoryTest {
         Files.delete(Paths.get(dbFile));
     }
 
+    protected Offsets<?, ?> offsets(Map<String, String> s, Map<String, ?> p) {
+        return Offsets.of(() -> s, new TestOffsetContext(p));
+    }
+
     @Test
     public void shouldSplitDatabaseAndTableName() {
         JdbcSchemaHistory schemaHistory = new JdbcSchemaHistory();
-        schemaHistory.configure(Configuration.create()
+
+        Configuration config = Configuration.create()
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_JDBC_URL.name(), "jdbc:sqlite:" + dbFile)
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_USER.name(), "user")
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_PASSWORD.name(), "pass")
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_TABLE_NAME.name(), "public.employee")
-                .build(), null, SchemaHistoryMetrics.NOOP, true);
+                .build();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, ddlParser, config, comparator, listener, true);
+
+        schemaHistory.configure(config, comparator, listener, processorProvider);
+
         assertTrue(schemaHistory.getConfig().getDatabaseName().equalsIgnoreCase("public"));
         assertTrue(schemaHistory.getConfig().getTableName().equalsIgnoreCase("employee"));
     }
@@ -139,7 +168,7 @@ public class JdbcSchemaHistoryTest {
         history.record(source, position, databaseName, schemaName, ddl, tableChanges, currentInstant);
         history.record(source, position, databaseName, schemaName, ddl, tableChanges, currentInstant);
         Tables tables = new Tables();
-        history.recover(source, position, tables, ddlParser);
+        history.recover(offsets(source, position), tables);
         assertEquals(tables.size(), 1);
         assertEquals(tables.forTable(tableId), table);
         history.record(source, position2, databaseName, schemaName, ddl, tableChanges2, currentInstant);
@@ -147,18 +176,82 @@ public class JdbcSchemaHistoryTest {
         history.stop();
         // after restart, it should recover history correctly
         JdbcSchemaHistory history2 = new JdbcSchemaHistory();
-        history2.configure(Configuration.create()
+
+        Configuration config = Configuration.create()
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_JDBC_URL.name(), "jdbc:sqlite:" + dbFile)
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_USER.name(), "user")
                 .with(SchemaHistory.CONFIGURATION_FIELD_PREFIX_STRING + JdbcSchemaHistoryConfig.PROP_PASSWORD.name(), "pass")
-                .build(), null, SchemaHistoryMetrics.NOOP, true);
+                .build();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, ddlParser, config, comparator, listener, true);
+
+        history2.configure(config, comparator, listener, processorProvider);
+
         history2.start();
         assertTrue(history2.storageExists());
         assertTrue(history2.exists());
         Tables tables2 = new Tables();
-        history2.recover(source, position2, tables2, ddlParser);
+        history2.recover(offsets(source, position2), tables2);
         assertEquals(tables2.size(), 2);
         assertEquals(tables2.forTable(tableId2), table2);
     }
 
+    private static class TestOffsetContext implements OffsetContext {
+        private final Map<String, ?> offset;
+
+        TestOffsetContext(Map<String, ?> offset) {
+            this.offset = offset;
+        }
+
+        @Override
+        public Map<String, ?> getOffset() {
+            return offset;
+        }
+
+        @Override
+        public Schema getSourceInfoSchema() {
+            return null;
+        }
+
+        @Override
+        public Struct getSourceInfo() {
+            return null;
+        }
+
+        @Override
+        public boolean isSnapshotRunning() {
+            return false;
+        }
+
+        @Override
+        public void markSnapshotRecord(SnapshotRecord record) {
+
+        }
+
+        @Override
+        public void preSnapshotStart() {
+
+        }
+
+        @Override
+        public void preSnapshotCompletion() {
+
+        }
+
+        @Override
+        public void postSnapshotCompletion() {
+
+        }
+
+        @Override
+        public void event(DataCollectionId collectionId, Instant timestamp) {
+
+        }
+
+        @Override
+        public TransactionContext getTransactionContext() {
+            return null;
+        }
+    }
 }

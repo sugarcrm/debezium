@@ -38,15 +38,17 @@ public abstract class HistorizedRelationalDatabaseSchema extends RelationalDatab
     private final static Logger LOGGER = LoggerFactory.getLogger(HistorizedRelationalDatabaseSchema.class);
 
     protected final SchemaHistory schemaHistory;
+    protected final DdlParser ddlParser;
     private final HistorizedRelationalDatabaseConnectorConfig historizedConnectorConfig;
     private boolean recoveredTables;
 
     protected HistorizedRelationalDatabaseSchema(HistorizedRelationalDatabaseConnectorConfig config, TopicNamingStrategy<TableId> topicNamingStrategy,
                                                  TableFilter tableFilter, ColumnNameFilter columnFilter, TableSchemaBuilder schemaBuilder,
-                                                 boolean tableIdCaseInsensitive, KeyMapper customKeysMapper) {
+                                                 boolean tableIdCaseInsensitive, KeyMapper customKeysMapper, DdlParser ddlParser) {
         super(config, topicNamingStrategy, tableFilter, columnFilter, schemaBuilder, tableIdCaseInsensitive, customKeysMapper);
 
-        this.schemaHistory = config.getSchemaHistory();
+        this.ddlParser = ddlParser;
+        this.schemaHistory = config.getSchemaHistory(ddlParser);
         this.schemaHistory.start();
         this.historizedConnectorConfig = config;
     }
@@ -68,7 +70,7 @@ public abstract class HistorizedRelationalDatabaseSchema extends RelationalDatab
             throw new DebeziumException(msg);
         }
 
-        schemaHistory.recover(offsets, tables(), getDdlParser());
+        schemaHistory.recover(offsets, tables());
         recoveredTables = !tableIds().isEmpty();
         for (TableId tableId : tableIds()) {
             buildAndRegisterSchema(tableFor(tableId));
@@ -90,12 +92,6 @@ public abstract class HistorizedRelationalDatabaseSchema extends RelationalDatab
             schemaHistory.initializeStorage();
         }
     }
-
-    /**
-     * Returns a new instance of the {@link DdlParser} to be used when recovering the schema from a previously persisted
-     * history.
-     */
-    protected abstract DdlParser getDdlParser();
 
     /**
      * Records the given schema change event in the persistent history.

@@ -33,6 +33,7 @@ import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.TableId;
 import io.debezium.relational.Tables.TableFilter;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.snapshot.SchemaPartitioner;
 import io.debezium.spi.schema.DataCollectionId;
 import io.debezium.util.Strings;
 
@@ -490,6 +491,15 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
                 return Lsn.valueOf(recorded.getString(SourceInfo.CHANGE_LSN_KEY))
                         .compareTo(Lsn.valueOf(desired.getString(SourceInfo.CHANGE_LSN_KEY))) < 1;
             }
+        };
+    }
+
+    @Override
+    protected SchemaPartitioner getSchemaPartitioner() {
+        return (source) -> {
+            return TableFilter.fromPredicate((tableId) -> {
+                return tableId.catalog().equals(((SqlServerPartition)source).getDatabaseName());
+            });
         };
     }
 
