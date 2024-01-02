@@ -48,7 +48,7 @@ public abstract class HistorizedRelationalDatabaseSchema extends RelationalDatab
         super(config, topicNamingStrategy, tableFilter, columnFilter, schemaBuilder, tableIdCaseInsensitive, customKeysMapper);
 
         this.ddlParser = ddlParser;
-        this.schemaHistory = config.getSchemaHistory();
+        this.schemaHistory = config.getSchemaHistory(ddlParser);
         this.schemaHistory.start();
         this.historizedConnectorConfig = config;
     }
@@ -70,7 +70,7 @@ public abstract class HistorizedRelationalDatabaseSchema extends RelationalDatab
             throw new DebeziumException(msg);
         }
 
-        schemaHistory.recover(offsets, tables(), ddlParser);
+        schemaHistory.recover(offsets, tables());
         recoveredTables = !tableIds().isEmpty();
         for (TableId tableId : tableIds()) {
             buildAndRegisterSchema(tableFor(tableId));

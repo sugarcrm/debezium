@@ -6,27 +6,15 @@
 package io.debezium.relational.history;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.debezium.config.Configuration;
-import io.debezium.config.Field;
-import io.debezium.document.Array;
-import io.debezium.document.Document;
-import io.debezium.function.Predicates;
+import io.debezium.pipeline.spi.Offsets;
 import io.debezium.relational.Tables;
-import io.debezium.relational.ddl.DdlParser;
-import io.debezium.relational.history.TableChanges.TableChange;
-import io.debezium.relational.history.TableChanges.TableChangeType;
-import io.debezium.relational.history.TableChanges.TableChangesSerializer;
-import io.debezium.text.MultipleParsingExceptions;
-import io.debezium.text.ParsingException;
 import io.debezium.util.Clock;
 
 /**
@@ -37,23 +25,18 @@ public abstract class AbstractSchemaHistory implements SchemaHistory {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-    public static Field.Set ALL_FIELDS = Field.setOf(NAME, INTERNAL_CONNECTOR_CLASS, INTERNAL_CONNECTOR_ID);
-
     protected Configuration config;
-    private HistoryRecordComparator comparator = HistoryRecordComparator.INSTANCE;
     private SchemaHistoryListener listener = SchemaHistoryListener.NOOP;
-    private boolean useCatalogBeforeSchema;
+    private HistoryRecordProcessorProvider processorProvider = HistoryRecordProcessorProvider.NOOP;
 
     protected AbstractSchemaHistory() {
     }
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
         this.config = config;
-        this.comparator = comparator != null ? comparator : HistoryRecordComparator.INSTANCE;
-
         this.listener = listener;
-        this.useCatalogBeforeSchema = useCatalogBeforeSchema;
+        this.processorProvider = processorProvider;
     }
 
     @Override
@@ -78,13 +61,9 @@ public abstract class AbstractSchemaHistory implements SchemaHistory {
     }
 
     @Override
-    public void recover(Map<Map<String, ?>, Map<String, ?>> offsets, Tables schema, DdlParser ddlParser) {
+    public void recover(Offsets<?, ?> offsets, Tables schema) {
         listener.recoveryStarted();
-        final HistoryRecordProcessor recordProcessor = new HistoryRecordProcessor(
-                offsets, schema, ddlParser,
-                config, comparator, listener,
-                useCatalogBeforeSchema);
-        recoverRecords(recordProcessor);
+        recoverRecords(processorProvider.get(offsets, schema));
         listener.recoveryStopped();
     }
 

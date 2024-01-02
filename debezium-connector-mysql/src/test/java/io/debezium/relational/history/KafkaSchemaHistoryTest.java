@@ -131,17 +131,25 @@ public class KafkaSchemaHistoryTest {
                 // in this test. However, it can't be so low that the broker returns the same
                 // messages more than once.
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
+                                ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
                         100)
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
+                                ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
                         50000)
                 .with(KafkaSchemaHistory.SKIP_UNPARSEABLE_DDL_STATEMENTS, skipUnparseableDDL)
                 .with(KafkaSchemaHistory.DDL_FILTER, "CREATE\\s+ROLE.*")
                 .with(KafkaSchemaHistory.INTERNAL_CONNECTOR_CLASS, "org.apache.kafka.connect.source.SourceConnector")
                 .with(KafkaSchemaHistory.INTERNAL_CONNECTOR_ID, "dbz-test")
                 .build();
-        history.configure(config, null, SchemaHistoryMetrics.NOOP, true);
+
+        DdlParser recoveryParser = new MySqlAntlrDdlParser();
+        DdlParser ddlParser = new MySqlAntlrDdlParser();
+
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, recoveryParser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
 
         // Should be able to call start more than once ...
@@ -152,8 +160,6 @@ public class KafkaSchemaHistoryTest {
         // Calling it another time to ensure we can work with the DB history topic already existing
         history.initializeStorage();
 
-        DdlParser recoveryParser = new MySqlAntlrDdlParser();
-        DdlParser ddlParser = new MySqlAntlrDdlParser();
         ddlParser.setCurrentSchema("db1"); // recover does this, so we need to as well
         Tables tables1 = new Tables();
         Tables tables2 = new Tables();
@@ -161,7 +167,7 @@ public class KafkaSchemaHistoryTest {
 
         // Recover from the very beginning ...
         setLogPosition(0);
-        history.recover(offsets, tables1, recoveryParser);
+        history.recover(offsets, tables1);
 
         // There should have been nothing to recover ...
         assertThat(tables1.size()).isEqualTo(0);
@@ -200,31 +206,31 @@ public class KafkaSchemaHistoryTest {
         // Stop the history (which should stop the producer) ...
         history.stop();
         history = new KafkaSchemaHistory();
-        history.configure(config, null, SchemaHistoryListener.NOOP, true);
+        history.configure(config, comparator, listener, processorProvider);
         // no need to start
 
         // Recover from the very beginning to just past the first change ...
         Tables recoveredTables = new Tables();
         setLogPosition(15);
-        history.recover(offsets, recoveredTables, recoveryParser);
+        history.recover(offsets, recoveredTables);
         assertThat(recoveredTables).isEqualTo(tables1);
 
         // Recover from the very beginning to just past the second change ...
         recoveredTables = new Tables();
         setLogPosition(50);
-        history.recover(offsets, recoveredTables, recoveryParser);
+        history.recover(offsets, recoveredTables);
         assertThat(recoveredTables).isEqualTo(tables2);
 
         // Recover from the very beginning to just past the third change ...
         recoveredTables = new Tables();
         setLogPosition(10010);
-        history.recover(offsets, recoveredTables, recoveryParser);
+        history.recover(offsets, recoveredTables);
         assertThat(recoveredTables).isEqualTo(tables3);
 
         // Recover from the very beginning to way past the third change ...
         recoveredTables = new Tables();
         setLogPosition(100000010);
-        history.recover(offsets, recoveredTables, recoveryParser);
+        history.recover(offsets, recoveredTables);
         assertThat(recoveredTables).isEqualTo(tables3);
     }
 
@@ -345,17 +351,23 @@ public class KafkaSchemaHistoryTest {
                 // in this test. However, it can't be so low that the broker returns the same
                 // messages more than once.
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
+                                ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
                         100)
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
+                                ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
                         50000)
                 .with(KafkaSchemaHistory.SKIP_UNPARSEABLE_DDL_STATEMENTS, true)
                 .with(KafkaSchemaHistory.INTERNAL_CONNECTOR_CLASS, "org.apache.kafka.connect.source.SourceConnector")
                 .with(KafkaSchemaHistory.INTERNAL_CONNECTOR_ID, "dbz-test")
                 .build();
 
-        history.configure(config, null, SchemaHistoryMetrics.NOOP, true);
+        DdlParser recoveryParser = new MySqlAntlrDdlParser();
+
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, recoveryParser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
 
         // dummytopic should not exist yet
@@ -373,14 +385,20 @@ public class KafkaSchemaHistoryTest {
                 .with(SchemaHistory.NAME, "my-db-history")
                 .with(KafkaSchemaHistory.RECOVERY_POLL_INTERVAL_MS, 500)
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
+                                ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),
                         100)
                 .with(KafkaSchemaHistory.consumerConfigPropertyName(
-                        ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
+                                ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
                         50000)
                 .build();
 
-        history.configure(config, null, SchemaHistoryMetrics.NOOP, true);
+        DdlParser recoveryParser = new MySqlAntlrDdlParser();
+
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, recoveryParser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
 
         assertFalse(history.storageExists());
         history.initializeStorage();
@@ -425,7 +443,13 @@ public class KafkaSchemaHistoryTest {
                 .with(KafkaSchemaHistory.KAFKA_QUERY_TIMEOUT_MS, 1)
                 .build();
 
-        history.configure(config, null, SchemaHistoryMetrics.NOOP, true);
+        DdlParser recoveryParser = new MySqlAntlrDdlParser();
+
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, recoveryParser, config, comparator, listener, true);
+
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
 
         try {

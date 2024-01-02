@@ -63,6 +63,7 @@ import io.debezium.relational.HistorizedRelationalDatabaseConnectorConfig;
 import io.debezium.relational.history.AbstractSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -126,7 +127,7 @@ public class KafkaSchemaHistory extends AbstractSchemaHistory {
             .withValidation(KafkaSchemaHistory.forKafka(Field::isRequired));
 
     public static final Field RECOVERY_POLL_INTERVAL_MS = Field.create(CONFIGURATION_FIELD_PREFIX_STRING
-            + "kafka.recovery.poll.interval.ms")
+                    + "kafka.recovery.poll.interval.ms")
             .withDisplayName("Poll interval during database schema history recovery (ms)")
             .withType(Type.INT)
             .withGroup(Field.createGroupEntry(Field.Group.ADVANCED, 1))
@@ -202,8 +203,8 @@ public class KafkaSchemaHistory extends AbstractSchemaHistory {
     }
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
+        super.configure(config, comparator, listener, processorProvider);
         if (!config.validateAndRecord(ALL_FIELDS, LOGGER::error)) {
             throw new ConnectException("Error configuring an instance of " + getClass().getSimpleName() + "; check the logs for details");
         }
@@ -233,7 +234,7 @@ public class KafkaSchemaHistory extends AbstractSchemaHistory {
                 .withDefault(ProducerConfig.CLIENT_ID_CONFIG, dbHistoryName)
                 .withDefault(ProducerConfig.ACKS_CONFIG, 1)
                 .withDefault(ProducerConfig.RETRIES_CONFIG, 1) // may result in duplicate messages, but that's
-                                                               // okay
+                // okay
                 .withDefault(ProducerConfig.BATCH_SIZE_CONFIG, 1024 * 32) // 32KB
                 .withDefault(ProducerConfig.LINGER_MS_CONFIG, 0)
                 .withDefault(ProducerConfig.BUFFER_MEMORY_CONFIG, 1024 * 1024) // 1MB
@@ -331,7 +332,7 @@ public class KafkaSchemaHistory extends AbstractSchemaHistory {
                                 LOGGER.trace("Recovering database schema history: {}", recordObj);
                                 if (recordObj == null || !recordObj.isValid()) {
                                     LOGGER.warn("Skipping invalid database schema history record '{}'. " +
-                                            "This is often not an issue, but if it happens repeatedly please check the '{}' topic.",
+                                                    "This is often not an issue, but if it happens repeatedly please check the '{}' topic.",
                                             recordObj, topicName);
                                 }
                                 else {

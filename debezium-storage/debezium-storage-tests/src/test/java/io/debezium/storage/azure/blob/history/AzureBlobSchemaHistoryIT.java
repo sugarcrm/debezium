@@ -29,9 +29,13 @@ import com.azure.storage.blob.BlobServiceClientBuilder;
 import io.debezium.config.Configuration;
 import io.debezium.document.DocumentReader;
 import io.debezium.relational.history.AbstractSchemaHistoryTest;
+import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessor;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.HistoryRecord;
-import io.debezium.relational.history.SchemaHistory;
+import io.debezium.relational.history.SchemaHistoryMetrics;
 import io.debezium.relational.history.SchemaHistoryListener;
+import io.debezium.relational.history.SchemaHistory;
 
 public class AzureBlobSchemaHistoryIT extends AbstractSchemaHistoryTest {
 
@@ -69,13 +73,17 @@ public class AzureBlobSchemaHistoryIT extends AbstractSchemaHistoryTest {
     @Override
     protected SchemaHistory createHistory() {
         SchemaHistory history = new AzureBlobSchemaHistory();
+
         Configuration config = Configuration.create()
                 .with(AzureBlobSchemaHistory.ACCOUNT_CONNECTION_STRING, String.format(CONNECTION_STRING, container.getMappedPort(10000)))
                 .with(AzureBlobSchemaHistory.CONTAINER_NAME, CONTAINER_NAME)
                 .with(AzureBlobSchemaHistory.BLOB_NAME, BLOB_NAME)
                 .build();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, parser, config, comparator, listener, true);
 
-        history.configure(config, null, SchemaHistoryListener.NOOP, true);
+        history.configure(config, comparator, listener, processorProvider);
         history.start();
 
         return history;
@@ -98,7 +106,7 @@ public class AzureBlobSchemaHistoryIT extends AbstractSchemaHistoryTest {
                 .getBlobClient(BLOB_NAME);
 
         assertFalse(blobClient.exists());
-        record(01, 0, "CREATE TABLE foo ( first VARCHAR(22) NOT NULL );", all, t3, t2, t1, t0);
+        record(1, 0, "CREATE TABLE foo ( first VARCHAR(22) NOT NULL );", all, t3, t2, t1, t0);
         assertTrue(blobClient.exists());
 
         List<HistoryRecord> historyRecords = new ArrayList<>();

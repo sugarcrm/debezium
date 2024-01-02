@@ -77,14 +77,19 @@ public abstract class AbstractSchemaHistoryTest extends AbstractConnectorTest {
     }
 
     protected Tables recoverHistory() {
+        Configuration config = getHistoryConfiguration();
+        HistoryRecordComparator comparator = null;
+        SchemaHistoryListener listener = SchemaHistoryMetrics.NOOP;
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, getDdlParser(), config, comparator, listener, true);
+
         // Initialize history
-        schemaHistory.configure(getHistoryConfiguration(), null, SchemaHistoryMetrics.NOOP, true);
+        schemaHistory.configure(config, comparator, listener, processorProvider);
         schemaHistory.start();
         schemaHistory.initializeStorage();
 
         // Recover records
         final Tables tables = new Tables();
-        schemaHistory.recover(getOffsets(), tables, getDdlParser());
+        schemaHistory.recover(getOffsets(), tables);
         return tables;
     }
 

@@ -24,6 +24,7 @@ import io.debezium.config.Field;
 import io.debezium.relational.history.AbstractFileBasedSchemaHistory;
 import io.debezium.relational.history.HistoryRecord;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
 import io.debezium.relational.history.SchemaHistoryException;
 import io.debezium.relational.history.SchemaHistoryListener;
@@ -47,7 +48,7 @@ public final class FileSchemaHistory extends AbstractFileBasedSchemaHistory {
     private Path path;
 
     @Override
-    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, boolean useCatalogBeforeSchema) {
+    public void configure(Configuration config, HistoryRecordComparator comparator, SchemaHistoryListener listener, HistoryRecordProcessorProvider processorProvider) {
         if (!config.validateAndRecord(ALL_FIELDS, logger::error)) {
             throw new DebeziumException(
                     "Error configuring an instance of " + getClass().getSimpleName() + "; check the logs for details");
@@ -55,7 +56,7 @@ public final class FileSchemaHistory extends AbstractFileBasedSchemaHistory {
         if (running.get()) {
             throw new SchemaHistoryException("Database schema history file already initialized to " + path);
         }
-        super.configure(config, comparator, listener, useCatalogBeforeSchema);
+        super.configure(config, comparator, listener, processorProvider);
         path = Paths.get(config.getString(FILE_PATH));
     }
 

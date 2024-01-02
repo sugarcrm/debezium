@@ -20,8 +20,12 @@ import io.debezium.config.Field;
 import io.debezium.function.Predicates;
 import io.debezium.relational.Selectors.TableIdToStringMapper;
 import io.debezium.relational.Tables.TableFilter;
+import io.debezium.relational.ddl.DdlParser;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.HistoryRecordProcessor;
+import io.debezium.relational.history.HistoryRecordProcessorProvider;
 import io.debezium.relational.history.SchemaHistory;
+import io.debezium.relational.history.SchemaHistoryListener;
 import io.debezium.relational.history.SchemaHistoryMetrics;
 
 /**
@@ -115,7 +119,7 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
     /**
      * Returns a configured (but not yet started) instance of the database schema history.
      */
-    public SchemaHistory getSchemaHistory() {
+    public SchemaHistory getSchemaHistory(DdlParser ddlParser) {
         Configuration config = getConfig();
 
         SchemaHistory schemaHistory = config.getInstance(SCHEMA_HISTORY, SchemaHistory.class);
@@ -134,8 +138,10 @@ public abstract class HistorizedRelationalDatabaseConnectorConfig extends Relati
                 .build();
 
         HistoryRecordComparator historyComparator = getHistoryRecordComparator();
-        schemaHistory.configure(schemaHistoryConfig, historyComparator,
-                new SchemaHistoryMetrics(this, multiPartitionMode()), useCatalogBeforeSchema()); // validates
+        SchemaHistoryListener historyListener = new SchemaHistoryMetrics(this, multiPartitionMode());
+        HistoryRecordProcessorProvider processorProvider = (o, s) -> new HistoryRecordProcessor(o, s, ddlParser, schemaHistoryConfig, historyComparator, historyListener,
+                useCatalogBeforeSchema());
+        schemaHistory.configure(schemaHistoryConfig, historyComparator, historyListener, processorProvider);
 
         return schemaHistory;
     }
