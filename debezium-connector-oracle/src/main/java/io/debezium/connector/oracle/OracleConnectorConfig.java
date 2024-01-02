@@ -47,6 +47,7 @@ import io.debezium.relational.RelationalDatabaseConnectorConfig;
 import io.debezium.relational.TableId;
 import io.debezium.relational.Tables.TableFilter;
 import io.debezium.relational.history.HistoryRecordComparator;
+import io.debezium.relational.history.snapshot.SchemaPartitioner;
 import io.debezium.util.Strings;
 
 /**
@@ -827,6 +828,11 @@ public class OracleConnectorConfig extends HistorizedRelationalDatabaseConnector
     @Override
     protected HistoryRecordComparator getHistoryRecordComparator() {
         return getAdapter().getHistoryRecordComparator();
+    }
+
+    @Override
+    protected SchemaPartitioner getSchemaPartitioner() {
+        return SchemaPartitioner.SINGLE_PARTITION;
     }
 
     /**
