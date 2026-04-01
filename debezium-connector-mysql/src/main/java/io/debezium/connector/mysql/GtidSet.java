@@ -48,7 +48,7 @@ public final class GtidSet {
     public GtidSet(String gtids) {
         gtids = gtids.replaceAll("\n", "").replaceAll("\r", "");
         new com.github.shyiko.mysql.binlog.GtidSet(gtids).getUUIDSets().forEach(uuidSet -> {
-            uuidSetsByServerId.put(uuidSet.getUUID(), new UUIDSet(uuidSet));
+            uuidSetsByServerId.put(uuidSet.getServerId().toString(), new UUIDSet(uuidSet));
         });
         StringBuilder sb = new StringBuilder();
         uuidSetsByServerId.values().forEach(uuidSet -> {
@@ -207,7 +207,7 @@ public final class GtidSet {
         private final LinkedList<Interval> intervals = new LinkedList<>();
 
         protected UUIDSet(com.github.shyiko.mysql.binlog.GtidSet.UUIDSet uuidSet) {
-            this.uuid = uuidSet.getUUID();
+            this.uuid = uuidSet.getServerId().toString();
             uuidSet.getIntervals().forEach(interval -> {
                 intervals.add(new Interval(interval.getStart(), interval.getEnd()));
             });

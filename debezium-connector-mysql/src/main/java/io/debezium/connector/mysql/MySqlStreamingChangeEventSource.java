@@ -491,12 +491,12 @@ public class MySqlStreamingChangeEventSource implements StreamingChangeEventSour
     protected void handleGtidEvent(MySqlOffsetContext offsetContext, Event event) {
         LOGGER.debug("GTID transaction: {}", event);
         GtidEventData gtidEvent = unwrapData(event);
-        String gtid = gtidEvent.getGtid();
+        String gtid = gtidEvent.getMySqlGtid().toString();
         gtidSet.add(gtid);
         offsetContext.startGtid(gtid, gtidSet.toString()); // rather than use the client's GTID set
         ignoreDmlEventByGtidSource = false;
         if (gtidDmlSourceFilter != null && gtid != null) {
-            String uuid = gtid.trim().substring(0, gtid.indexOf(":"));
+            String uuid = gtidEvent.getMySqlGtid().getServerId().toString();
             if (!gtidDmlSourceFilter.test(uuid)) {
                 ignoreDmlEventByGtidSource = true;
             }

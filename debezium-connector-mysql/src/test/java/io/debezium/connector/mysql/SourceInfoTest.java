@@ -465,43 +465,52 @@ public class SourceInfoTest {
 
     @Test
     public void shouldConsiderPositionsWithSameGtidSetsAsSame() {
-        assertPositionWithGtids("IdA:1-5").isAtOrBefore(positionWithGtids("IdA:1-5")); // same, single
-        assertPositionWithGtids("IdA:1-5,IdB:1-20").isAtOrBefore(positionWithGtids("IdA:1-5,IdB:1-20")); // same, multiple
-        assertPositionWithGtids("IdA:1-5,IdB:1-20").isAtOrBefore(positionWithGtids("IdB:1-20,IdA:1-5")); // equivalent
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5").isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5")); // same, single
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20")
+                .isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20")); // same, multiple
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20")
+                .isAtOrBefore(positionWithGtids("22222222-2222-2222-2222-222222222222:1-20,11111111-1111-1111-1111-111111111111:1-5")); // equivalent
     }
 
     @Test
     public void shouldConsiderPositionsWithSameGtidSetsAndSnapshotAsSame() {
-        assertPositionWithGtids("IdA:1-5", true).isAtOrBefore(positionWithGtids("IdA:1-5", true)); // same, single
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", true).isAtOrBefore(positionWithGtids("IdA:1-5,IdB:1-20", true)); // same,
-                                                                                                                     // multiple
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", true).isAtOrBefore(positionWithGtids("IdB:1-20,IdA:1-5", true)); // equivalent
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5", true).isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5", true)); // same, single
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)
+                .isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)); // same,
+        // multiple
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)
+                .isAtOrBefore(positionWithGtids("22222222-2222-2222-2222-222222222222:1-20,11111111-1111-1111-1111-111111111111:1-5", true)); // equivalent
     }
 
     @Test
     public void shouldOrderPositionWithGtidAndSnapshotBeforePositionWithSameGtidButNoSnapshot() {
-        assertPositionWithGtids("IdA:1-5", true).isAtOrBefore(positionWithGtids("IdA:1-5")); // same, single
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", true).isAtOrBefore(positionWithGtids("IdA:1-5,IdB:1-20")); // same, multiple
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", true).isAtOrBefore(positionWithGtids("IdB:1-20,IdA:1-5")); // equivalent
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5", true).isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5")); // same, single
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)
+                .isAtOrBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20")); // same, multiple
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)
+                .isAtOrBefore(positionWithGtids("22222222-2222-2222-2222-222222222222:1-20,11111111-1111-1111-1111-111111111111:1-5")); // equivalent
     }
 
     @Test
     public void shouldOrderPositionWithoutGtidAndSnapshotAfterPositionWithSameGtidAndSnapshot() {
-        assertPositionWithGtids("IdA:1-5", false).isAfter(positionWithGtids("IdA:1-5", true)); // same, single
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", false).isAfter(positionWithGtids("IdA:1-5,IdB:1-20", true)); // same, multiple
-        assertPositionWithGtids("IdA:1-5,IdB:1-20", false).isAfter(positionWithGtids("IdB:1-20,IdA:1-5", true)); // equivalent
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5", false).isAfter(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5", true)); // same, single
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", false)
+                .isAfter(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", true)); // same, multiple
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20", false)
+                .isAfter(positionWithGtids("22222222-2222-2222-2222-222222222222:1-20,11111111-1111-1111-1111-111111111111:1-5", true)); // equivalent
     }
 
     @Test
     public void shouldOrderPositionWithGtidsAsBeforePositionWithExtraServerUuidInGtids() {
-        assertPositionWithGtids("IdA:1-5").isBefore(positionWithGtids("IdA:1-5,IdB:1-20"));
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5")
+                .isBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-5,22222222-2222-2222-2222-222222222222:1-20"));
     }
 
     @Test
     public void shouldOrderPositionsWithSameServerButLowerUpperLimitAsBeforePositionWithSameServerUuidInGtids() {
-        assertPositionWithGtids("IdA:1-5").isBefore(positionWithGtids("IdA:1-6"));
-        assertPositionWithGtids("IdA:1-5:7-9").isBefore(positionWithGtids("IdA:1-10"));
-        assertPositionWithGtids("IdA:2-5:8-9").isBefore(positionWithGtids("IdA:1-10"));
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5").isBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-6"));
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:1-5:7-9").isBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-10"));
+        assertPositionWithGtids("11111111-1111-1111-1111-111111111111:2-5:8-9").isBefore(positionWithGtids("11111111-1111-1111-1111-111111111111:1-10"));
     }
 
     @Test
