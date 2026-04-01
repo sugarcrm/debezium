@@ -235,6 +235,7 @@ public class BinlogReader extends AbstractReader {
         client.setKeepAlive(configuration.getBoolean(MySqlConnectorConfig.KEEP_ALIVE));
         final long keepAliveInterval = configuration.getLong(MySqlConnectorConfig.KEEP_ALIVE_INTERVAL_MS);
         client.setKeepAliveInterval(keepAliveInterval);
+        client.setUseNonGracefulDisconnect(true);
         // Considering heartbeatInterval should be less than keepAliveInterval, we use the heartbeatIntervalFactor
         // multiply by keepAliveInterval and set the result value to heartbeatInterval.The default value of heartbeatIntervalFactor
         // is 0.8, and we believe the left time (0.2 * keepAliveInterval) is enough to process the packet received from the MySQL server.
